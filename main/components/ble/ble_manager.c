@@ -12,6 +12,7 @@
 #include <esp_err.h>
 #include "esp_system.h"
 #include "esp_heap_caps.h"
+#include "esp_mac.h"  // MACアドレス取得用（ESP-IDF 5.5では手動インクルード必要）
 
 /* NimBLE Includes */
 #include "nimble/nimble_port.h"
@@ -621,6 +622,43 @@ void ble_host_task(void *param)
     nimble_port_freertos_deinit();
 }
 
+/**
+ * @brief BLEデバイス名を生成
+ * @param device_name 生成したデバイス名を格納するバッファ（最低20バイト必要）
+ * @return ESP_OK: 成功, その他: エラー
+ *
+ * フォーマット: PlantMonitor_xx_yyyy
+ * - xx: ハードウェアバージョン（10または20）
+ * - yyyy: デバイスID（MACアドレスの下位2バイトを16進数で表示）
+ */
+static esp_err_t generate_ble_device_name(char *device_name, size_t max_len)
+{
+    if (device_name == NULL || max_len < 20) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    // BLE MACアドレスを取得
+    uint8_t mac[6];
+    esp_err_t ret = esp_read_mac(mac, ESP_MAC_BT);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to read BLE MAC address: %s", esp_err_to_name(ret));
+        // フォールバック: デフォルト名
+        snprintf(device_name, max_len, "PlantMonitor_%02d_0000", HARDWARE_VERSION);
+        return ret;
+    }
+
+    // デバイスID = MACアドレスの下位2バイト（16進数4桁）
+    uint16_t device_id = (mac[4] << 8) | mac[5];
+
+    // デバイス名を生成: PlantMonitor_xx_yyyy
+    snprintf(device_name, max_len, "PlantMonitor_%02d_%04X", HARDWARE_VERSION, device_id);
+
+    ESP_LOGI(TAG, "Generated BLE device name: %s (MAC: %02X:%02X:%02X:%02X:%02X:%02X)",
+             device_name, mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+
+    return ESP_OK;
+}
+
 esp_err_t ble_manager_init(void)
 {
     esp_err_t ret;
@@ -657,8 +695,19 @@ esp_err_t ble_manager_init(void)
     rc = ble_gatts_add_svcs(gatt_svr_svcs);
     assert(rc == 0);
 
-    rc = ble_svc_gap_device_name_set("SoilMonitorV1");
-    assert(rc == 0);
+    // BLEデバイス名を生成・設定
+    char ble_device_name[32];
+    ret = generate_ble_device_name(ble_device_name, sizeof(ble_device_name));
+    if (ret == ESP_OK) {
+        rc = ble_svc_gap_device_name_set(ble_device_name);
+        assert(rc == 0);
+        ESP_LOGI(TAG, "✅ BLE device name set: %s", ble_device_name);
+    } else {
+        // フォールバック処理（すでにgenerate_ble_device_name内で設定済み）
+        rc = ble_svc_gap_device_name_set(ble_device_name);
+        assert(rc == 0);
+        ESP_LOGW(TAG, "⚠️  Using fallback BLE device name: %s", ble_device_name);
+    }
 
     return ESP_OK;
 }
