@@ -390,7 +390,7 @@ static esp_err_t handle_get_device_info(uint8_t sequence_num, uint8_t *response_
 
     strncpy(info.device_name, APP_NAME, sizeof(info.device_name) - 1);
     strncpy(info.firmware_version, SOFTWARE_VERSION, sizeof(info.firmware_version) - 1);
-    strncpy(info.hardware_version, HARDWARE_VERSION, sizeof(info.hardware_version) - 1);
+    strncpy(info.hardware_version, HARDWARE_VERSION_STRING, sizeof(info.hardware_version) - 1); //修正箇所
     info.uptime_seconds = g_system_uptime;
     info.total_sensor_readings = g_total_sensor_readings;
 
@@ -621,13 +621,23 @@ void ble_host_task(void *param)
     nimble_port_freertos_deinit();
 }
 
-void ble_manager_init(void)
+esp_err_t ble_manager_init(void)
 {
     esp_err_t ret;
+
+    // Bluetooth Modem-sleepを有効化（省電力モード）
+    // これにより、BLEアドバタイジング中も接続可能で、自動的に必要時のみ復帰
+    ret = esp_bt_sleep_enable();
+    if (ret == ESP_OK) {
+        ESP_LOGI(TAG, "✅ Bluetooth Modem-sleep enabled");
+    } else {
+        ESP_LOGW(TAG, "⚠️  Bluetooth Modem-sleep enable failed: %s (continuing anyway)", esp_err_to_name(ret));
+    }
+
     ret = nimble_port_init();
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to init nimble port: %d", ret);
-        return;
+        return ret;
     }
 
     ESP_LOGI(TAG, "Initializing BLE Manager");
@@ -649,6 +659,8 @@ void ble_manager_init(void)
 
     rc = ble_svc_gap_device_name_set("SoilMonitorV1");
     assert(rc == 0);
+
+    return ESP_OK;
 }
 
 void print_ble_system_info(void)

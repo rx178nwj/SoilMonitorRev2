@@ -1,4 +1,5 @@
 #include "switch_input.h"
+#include "../../common_types.h"
 #include "esp_log.h"
 
 static const char *TAG = "SWITCH_INPUT";

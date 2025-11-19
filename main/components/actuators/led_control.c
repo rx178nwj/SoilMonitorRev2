@@ -1,5 +1,6 @@
 #include "../actuators/led_control.h"
 #include "../actuators/ws2812_control.h"
+#include "../../common_types.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"

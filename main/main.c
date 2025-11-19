@@ -37,6 +37,7 @@
 // 分離されたモジュール
 #include "components/ble/ble_manager.h"
 #include "components/sensors/sht30_sensor.h"
+#include "components/sensors/sht40_sensor.h"
 #include "components/sensors/tsl2591_sensor.h"
 #include "wifi_manager.h"
 #include "time_sync_manager.h"
@@ -57,6 +58,26 @@ static TimerHandle_t g_notify_timer;
 
 static void notify_timer_callback(TimerHandle_t xTimer);
 
+// I2Cバススキャン関数（デバッグ用）
+static void i2c_scan_bus(void) {
+    ESP_LOGI(TAG, "I2Cバススキャン開始...");
+    int devices_found = 0;
+
+    for (uint8_t addr = 1; addr < 127; addr++) {
+        esp_err_t ret = i2c_master_write_to_device(I2C_NUM_0, addr, NULL, 0, pdMS_TO_TICKS(50));
+        if (ret == ESP_OK) {
+            ESP_LOGI(TAG, "  I2Cデバイス検出: アドレス 0x%02X", addr);
+            devices_found++;
+        }
+    }
+
+    if (devices_found == 0) {
+        ESP_LOGW(TAG, "I2Cデバイスが見つかりませんでした");
+    } else {
+        ESP_LOGI(TAG, "合計 %d 個のI2Cデバイスが見つかりました", devices_found);
+    }
+}
+
 // I2C初期化
 static esp_err_t init_i2c(void) {
     i2c_config_t i2c_config = {
@@ -73,6 +94,8 @@ static esp_err_t init_i2c(void) {
     ret = i2c_driver_install(I2C_NUM_0, I2C_MODE_MASTER, 0, 0, 0);
     if (ret == ESP_OK) {
         ESP_LOGI(TAG, "I2C initialized successfully");
+        vTaskDelay(pdMS_TO_TICKS(100)); // I2Cデバイスの安定化待機
+        i2c_scan_bus(); // バススキャン実行
     }
     return ret;
 }
@@ -94,9 +117,10 @@ static void read_all_sensors(soil_data_t *data) {
     data->soil_moisture = (float)read_moisture_sensor();
     ESP_LOGI(TAG, "  - Soil Moisture: %.0f mV", data->soil_moisture);
 
-
+#if HARDWARE_VERSION == 10
+    // Rev1: SHT30センサーを使用
     sht30_data_t sht30;
-    if (sht30_read_data(&sht30) == ESP_OK) {
+    if (sht30_read_data(&sht30) == ESP_OK && !sht30.error) {
         data->temperature = sht30.temperature;
         data->humidity = sht30.humidity;
         ESP_LOGI(TAG, "  - SHT30: Temp=%.1f C, Hum=%.1f %%", data->temperature, data->humidity);
@@ -104,6 +128,18 @@ static void read_all_sensors(soil_data_t *data) {
         ESP_LOGE(TAG, "  - SHT30: Failed to read data");
         data->sensor_error = true;
     }
+#else // HARDWARE_VERSION == 20
+    // Rev2: SHT40センサーを使用
+    sht40_data_t sht40;
+    if (sht40_read_data(&sht40) == ESP_OK && !sht40.error) {
+        data->temperature = sht40.temperature;
+        data->humidity = sht40.humidity;
+        ESP_LOGI(TAG, "  - SHT40: Temp=%.1f C, Hum=%.1f %%", data->temperature, data->humidity);
+    } else {
+        ESP_LOGE(TAG, "  - SHT40: Failed to read data");
+        data->sensor_error = true;
+    }
+#endif
 
     // TSL2591から5回データを取得
     tsl2591_data_t tsl2591;
@@ -150,13 +186,13 @@ static void read_all_sensors(soil_data_t *data) {
 
 /* --- GPIO Initialization --- */
 void init_gpio(void) {
-    gpio_reset_pin(RED_LED_GPIO_PIN);
-    gpio_set_direction(RED_LED_GPIO_PIN, GPIO_MODE_OUTPUT);
-    gpio_set_level(RED_LED_GPIO_PIN, 0);
+    gpio_reset_pin(RED_LED_PIN);
+    gpio_set_direction(RED_LED_PIN, GPIO_MODE_OUTPUT);
+    gpio_set_level(RED_LED_PIN, 0);
 
-    gpio_reset_pin(BLU_LED_GPIO_PIN);
-    gpio_set_direction(BLU_LED_GPIO_PIN, GPIO_MODE_OUTPUT);
-    gpio_set_level(BLU_LED_GPIO_PIN, 0);
+    gpio_reset_pin(BLUE_LED_PIN);
+    gpio_set_direction(BLUE_LED_PIN, GPIO_MODE_OUTPUT);
+    gpio_set_level(BLUE_LED_PIN, 0);
 }
 
 // センサー読み取り専用タスク
@@ -164,11 +200,11 @@ static void sensor_read_task(void* pvParameters) {
     soil_data_t data;
     while (1) {
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-        gpio_set_level(RED_LED_GPIO_PIN, 1);
+        gpio_set_level(RED_LED_PIN, 1);
         read_all_sensors(&data);
         plant_manager_process_sensor_data(&data);
         vTaskDelay(pdMS_TO_TICKS(1000));
-        gpio_set_level(RED_LED_GPIO_PIN, 0);
+        gpio_set_level(RED_LED_PIN, 0);
     }
 }
 
@@ -315,16 +351,18 @@ static esp_err_t system_init(void) {
     init_i2c();
     init_gpio();
     led_control_init();
-    sht30_init();
+#if HARDWARE_VERSION == 10
+    sht30_init();  // Rev1: SHT30センサー初期化
+#else
+    sht40_init();  // Rev2: SHT40センサー初期化
+#endif
     tsl2591_init();
 
     ESP_ERROR_CHECK(plant_manager_init());
     log_plant_profile();
 
-    // WiFiと時刻同期の初期化
-    ESP_ERROR_CHECK(wifi_manager_init(wifi_status_callback));
-    ESP_ERROR_CHECK(time_sync_manager_init(time_sync_callback));
-    
+    // WiFiと時刻同期の初期化は後で行う（BLEの後）
+
     data_buffer_init();
     return ESP_OK;
 }
@@ -335,16 +373,32 @@ void app_main(void) {
     ESP_LOGI(TAG, "Starting Soil Monitor Application...");
     ESP_ERROR_CHECK(system_init());
 
+    // BLE初期化を最優先で実行（WiFiと電源管理より前）
+    esp_err_t ble_ret = ble_manager_init();
+    if (ble_ret == ESP_OK) {
+        nimble_port_freertos_init(ble_host_task);
+        ESP_LOGI(TAG, "✅ BLE initialized and host task started successfully");
+    } else {
+        ESP_LOGW(TAG, "⚠️  BLE initialization failed, continuing without BLE functionality");
+    }
+
+    // BLE Modem-sleepが有効な場合、自動Light-sleepを併用可能
+    // Modem-sleepにより、BLEアドバタイジングを維持しながら省電力化
 #ifdef CONFIG_PM_ENABLE
     esp_pm_config_t pm_config = {
-     .max_freq_mhz = CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ,
-     .min_freq_mhz = 10,
-     .light_sleep_enable = true
+        .max_freq_mhz = CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ,
+        .min_freq_mhz = 10,
+        .light_sleep_enable = true  // Modem-sleepと併用で自動Light-sleep有効
     };
     ESP_ERROR_CHECK(esp_pm_configure(&pm_config));
+    ESP_LOGI(TAG, "✅ Power management configured (auto light-sleep with BLE modem-sleep)");
 #endif
 
-    ble_manager_init();
+    // WiFiと時刻同期の初期化
+    ESP_ERROR_CHECK(wifi_manager_init(wifi_status_callback));
+    ESP_ERROR_CHECK(time_sync_manager_init(time_sync_callback));
+
+    // WiFi接続開始
     network_init();
 
     xTaskCreate(sensor_read_task, "sensor_read", 4096, NULL, 5, &g_sensor_task_handle);
@@ -353,7 +407,5 @@ void app_main(void) {
     g_notify_timer = xTimerCreate("notify_timer", pdMS_TO_TICKS(SENSOR_READ_INTERVAL_MS), pdTRUE, NULL, notify_timer_callback);
     xTimerStart(g_notify_timer, 0);
 
-    nimble_port_freertos_init(ble_host_task);
     ESP_LOGI(TAG, "Initialization complete.");
 }
-

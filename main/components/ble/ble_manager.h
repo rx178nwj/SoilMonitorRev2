@@ -76,7 +76,7 @@ typedef enum {
 
 /* --- Public Function Prototypes --- */
 
-void ble_manager_init(void);    // BLEマネージャー初期化
+esp_err_t ble_manager_init(void);    // BLEマネージャー初期化
 void ble_host_task(void *param); // BLEホストタスク
 void print_ble_system_info(void); // BLEシステム情報を表示
 void start_advertising(void);   // 広告開始

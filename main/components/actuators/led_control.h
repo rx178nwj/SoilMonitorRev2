@@ -9,10 +9,6 @@
 extern "C" {
 #endif
 
-// GPIO定義
-#define BLUE_LED_PIN        GPIO_NUM_8   // 青色LED
-#define RED_LED_PIN         GPIO_NUM_20  // 赤色LED
-
 // LED制御構造体
 typedef struct {
     bool blue_led_state;

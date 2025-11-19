@@ -9,9 +9,6 @@
 extern "C" {
 #endif
 
-// GPIO定義
-#define SWITCH_PIN          GPIO_NUM_9   // スイッチピン
-
 // スイッチ入力制御関数
 esp_err_t switch_input_init(void);
 bool switch_input_is_pressed(void);
