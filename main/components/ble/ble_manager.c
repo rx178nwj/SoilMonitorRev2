@@ -12,7 +12,7 @@
 #include <esp_err.h>
 #include "esp_system.h"
 #include "esp_heap_caps.h"
-#include "esp_mac.h"  // MACアドレス取得用（ESP-IDF 5.5では手動インクルード必要）
+#include "esp_mac.h"
 
 /* NimBLE Includes */
 #include "nimble/nimble_port.h"
@@ -26,10 +26,7 @@
 #include "ble_manager.h"
 #include "../../common_types.h"
 #include "../plant_logic/data_buffer.h"
-#include "../../nvs_config.h" // nvs_config_save_plant_profile のためにインクルード
-
-// 仮のデータバッファ (実際のプロジェクトに合わせてください)
-extern soil_data_t data_buffer[24 * 60];
+#include "../../nvs_config.h"
 
 static const char *TAG = "BLE_MGR";
 
@@ -77,61 +74,30 @@ static int gatt_svr_access_data_status_cb(uint16_t conn_handle, uint16_t attr_ha
 
 
 /* --- GATT Service/Characteristic UUID Definitions --- */
-
-/**
- * Plant Monitor BLE Service UUID: 59462f12-9543-9999-12c8-58b459a2712d
- * メインサービス - 土壌監視システムのすべての特性を含む
- */
 static const ble_uuid128_t gatt_svr_svc_uuid =
     BLE_UUID128_INIT(0x2d, 0x71, 0xa2, 0x59, 0xb4, 0x58, 0xc8, 0x12,
                      0x99, 0x99, 0x43, 0x95, 0x12, 0x2f, 0x46, 0x59);
 
-/**
- * Sensor Data Characteristic UUID: 6a3b2c01-4e5f-6a7b-8c9d-e0f123456789
- * 用途: 最新のセンサーデータ読み取り (Read/Notify)
- * データ: soil_ble_data_t (温度、湿度、照度、土壌水分 + タイムスタンプ)
- */
 static const ble_uuid128_t gatt_svr_chr_uuid_sensor_data =
     BLE_UUID128_INIT(0x89, 0x67, 0x45, 0x23, 0xf1, 0xe0, 0x9d, 0x8c,
                      0x7b, 0x6a, 0x5f, 0x4e, 0x01, 0x2c, 0x3b, 0x6a);
 
-/**
- * Data Status Characteristic UUID: 6a3b2c1d-4e5f-6a7b-8c9d-e0f123456790
- * 用途: データバッファのステータス情報 (Read/Write)
- * データ: ble_data_status_t (件数、容量、空/満フラグ)
- */
 static const ble_uuid128_t gatt_svr_chr_uuid_data_status =
     BLE_UUID128_INIT(0x90, 0x67, 0x45, 0x23, 0xf1, 0xe0, 0x9d, 0x8c,
                      0x7b, 0x6a, 0x5f, 0x4e, 0x1d, 0x2c, 0x3b, 0x6a);
 
-/**
- * Command Characteristic UUID: 6a3b2c1d-4e5f-6a7b-8c9d-e0f123456791
- * 用途: クライアントからのコマンド受信 (Write only)
- * データ: ble_command_packet_t (コマンドID、シーケンス番号、データ)
- */
 static const ble_uuid128_t gatt_svr_chr_uuid_command =
     BLE_UUID128_INIT(0x91, 0x67, 0x45, 0x23, 0xf1, 0xe0, 0x9d, 0x8c,
                      0x7b, 0x6a, 0x5f, 0x4e, 0x1d, 0x2c, 0x3b, 0x6a);
 
-/**
- * Response Characteristic UUID: 6a3b2c1d-4e5f-6a7b-8c9d-e0f123456792
- * 用途: コマンドレスポンスの通知 (Read/Notify)
- * データ: ble_response_packet_t (レスポンスID、ステータス、データ)
- */
 static const ble_uuid128_t gatt_svr_chr_uuid_response =
     BLE_UUID128_INIT(0x92, 0x67, 0x45, 0x23, 0xf1, 0xe0, 0x9d, 0x8c,
                      0x7b, 0x6a, 0x5f, 0x4e, 0x1d, 0x2c, 0x3b, 0x6a);
 
-/**
- * Data Transfer Characteristic UUID: 6a3b2c1d-4e5f-6a7b-8c9d-e0f123456793
- * 用途: 将来的な拡張用（現在未使用） (Read/Write/Notify)
- * データ: TBD (大容量データ転送用に予約)
- */
 static const ble_uuid128_t gatt_svr_chr_uuid_data_transfer =
     BLE_UUID128_INIT(0x93, 0x67, 0x45, 0x23, 0xf1, 0xe0, 0x9d, 0x8c,
                      0x7b, 0x6a, 0x5f, 0x4e, 0x1d, 0x2c, 0x3b, 0x6a);
 
-// (GATTサービス定義は変更なし)
 static const struct ble_gatt_svc_def gatt_svr_svcs[] = {
     {
         .type = BLE_GATT_SVC_TYPE_PRIMARY,
@@ -177,19 +143,14 @@ static const struct ble_gatt_svc_def gatt_svr_svcs[] = {
 static int gatt_svr_access_sensor_data_cb(uint16_t conn_handle, uint16_t attr_handle,
                               struct ble_gatt_access_ctxt *ctxt, void *arg)
 {
-    ESP_LOGD(TAG, "Sensor Data access, op=%d", ctxt->op);
-
     switch (ctxt->op) {
     case BLE_GATT_ACCESS_OP_READ_CHR: {
-        // 最新のセンサーデータを取得
         minute_data_t latest_data;
         esp_err_t ret = data_buffer_get_latest_minute_data(&latest_data);
         if (ret != ESP_OK) {
-            ESP_LOGE(TAG, "Failed to get latest sensor data");
             return BLE_ATT_ERR_UNLIKELY;
         }
 
-        // soil_ble_data_t形式に変換
         soil_ble_data_t ble_data;
         ble_data.datetime.tm_sec = latest_data.timestamp.tm_sec;
         ble_data.datetime.tm_min = latest_data.timestamp.tm_min;
@@ -205,70 +166,42 @@ static int gatt_svr_access_sensor_data_cb(uint16_t conn_handle, uint16_t attr_ha
         ble_data.lux = latest_data.lux;
         ble_data.soil_moisture = latest_data.soil_moisture;
 
-        // データをmbufに追加
         int rc = os_mbuf_append(ctxt->om, &ble_data, sizeof(ble_data));
         if (rc != 0) {
-            ESP_LOGE(TAG, "Failed to append sensor data to mbuf");
             return BLE_ATT_ERR_INSUFFICIENT_RES;
         }
-
-        ESP_LOGD(TAG, "Sensor data read: T=%.1f, H=%.1f, L=%.0f, M=%.0f",
-                 ble_data.temperature, ble_data.humidity, ble_data.lux, ble_data.soil_moisture);
         return 0;
     }
-
-    case BLE_GATT_ACCESS_OP_WRITE_CHR:
-        ESP_LOGW(TAG, "Write operation not supported for sensor data");
-        return BLE_ATT_ERR_WRITE_NOT_PERMITTED;
-
     default:
-        ESP_LOGW(TAG, "Unsupported operation: %d", ctxt->op);
-        return BLE_ATT_ERR_UNLIKELY;
+        return BLE_ATT_ERR_WRITE_NOT_PERMITTED;
     }
 }
 
 static int gatt_svr_access_data_status_cb(uint16_t conn_handle, uint16_t attr_handle,
                               struct ble_gatt_access_ctxt *ctxt, void *arg)
 {
-    ESP_LOGD(TAG, "Data Status access, op=%d", ctxt->op);
-
     switch (ctxt->op) {
     case BLE_GATT_ACCESS_OP_READ_CHR: {
-        // データバッファの統計情報を取得
         data_buffer_stats_t stats;
         esp_err_t ret = data_buffer_get_stats(&stats);
         if (ret != ESP_OK) {
-            ESP_LOGE(TAG, "Failed to get buffer stats");
             return BLE_ATT_ERR_UNLIKELY;
         }
 
-        // ble_data_status_t形式に変換
         ble_data_status_t status;
         status.count = stats.minute_data_count;
-        status.capacity = DATA_BUFFER_MINUTES_PER_DAY;  // 1440分
+        status.capacity = DATA_BUFFER_MINUTES_PER_DAY;
         status.f_empty = (stats.minute_data_count == 0) ? 1 : 0;
         status.f_full = (stats.minute_data_count >= DATA_BUFFER_MINUTES_PER_DAY) ? 1 : 0;
 
-        // データをmbufに追加
         int rc = os_mbuf_append(ctxt->om, &status, sizeof(status));
         if (rc != 0) {
-            ESP_LOGE(TAG, "Failed to append status data to mbuf");
             return BLE_ATT_ERR_INSUFFICIENT_RES;
         }
-
-        ESP_LOGD(TAG, "Status read: count=%d, capacity=%d, empty=%d, full=%d",
-                 status.count, status.capacity, status.f_empty, status.f_full);
         return 0;
     }
-
-    case BLE_GATT_ACCESS_OP_WRITE_CHR:
-        // 書き込みは現在サポートしない
-        ESP_LOGW(TAG, "Write operation not currently supported for data status");
-        return BLE_ATT_ERR_WRITE_NOT_PERMITTED;
-
     default:
-        ESP_LOGW(TAG, "Unsupported operation: %d", ctxt->op);
-        return BLE_ATT_ERR_UNLIKELY;
+        return BLE_ATT_ERR_WRITE_NOT_PERMITTED;
     }
 }
 
@@ -276,29 +209,21 @@ static int gatt_svr_access_command_cb(uint16_t conn_handle, uint16_t attr_handle
                                       struct ble_gatt_access_ctxt *ctxt, void *arg)
 {
     if (ctxt->op != BLE_GATT_ACCESS_OP_WRITE_CHR) {
-        ESP_LOGW(TAG, "Command CB: Invalid operation %d", ctxt->op);
         return BLE_ATT_ERR_WRITE_NOT_PERMITTED;
     }
 
     uint16_t data_len = OS_MBUF_PKTLEN(ctxt->om);
-    ESP_LOGI(TAG, "Command received: %d bytes", data_len);
-
     if (g_command_processing) {
-        ESP_LOGW(TAG, "Command received while another is processing. Ignoring.");
         return 0;
     }
 
     if (data_len < sizeof(ble_command_packet_t)) {
-        ESP_LOGE(TAG, "Invalid command packet size: %d", data_len);
         return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
     }
 
-    // FIX: OS_MBUF_DATAマクロの誤用を修正
     ble_command_packet_t *cmd_packet = (ble_command_packet_t *)ctxt->om->om_data;
 
     if (data_len != sizeof(ble_command_packet_t) + cmd_packet->data_length) {
-        ESP_LOGE(TAG, "Command data_length mismatch. Expected %d, got %d",
-                 (int)(sizeof(ble_command_packet_t) + cmd_packet->data_length), data_len);
         return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
     }
 
@@ -310,7 +235,6 @@ static int gatt_svr_access_command_cb(uint16_t conn_handle, uint16_t attr_handle
 
     esp_err_t err = process_ble_command(cmd_packet, response_buffer, &response_length);
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to process command 0x%02X", cmd_packet->command_id);
         ble_response_packet_t *resp = (ble_response_packet_t *)response_buffer;
         resp->response_id = cmd_packet->command_id;
         resp->status_code = RESP_STATUS_ERROR;
@@ -322,37 +246,21 @@ static int gatt_svr_access_command_cb(uint16_t conn_handle, uint16_t attr_handle
     send_response_notification(response_buffer, response_length);
 
     g_command_processing = false;
-    // FIX: 成功時の戻り値を追加し、未定義定数を修正
     return 0;
 }
 
 static int gatt_svr_access_response_cb(uint16_t conn_handle, uint16_t attr_handle,
                                        struct ble_gatt_access_ctxt *ctxt, void *arg)
 {
-    // Response特性はNotify専用（コマンドレスポンスの通知に使用）
-    // Read操作は想定していないが、エラーは返さない
-    ESP_LOGD(TAG, "Response characteristic accessed (op: %d)", ctxt->op);
-
     if (ctxt->op == BLE_GATT_ACCESS_OP_WRITE_CHR) {
-        ESP_LOGW(TAG, "Write operation not supported for response characteristic");
         return BLE_ATT_ERR_WRITE_NOT_PERMITTED;
     }
-
     return 0;
 }
 
 static int gatt_svr_access_data_transfer_cb(uint16_t conn_handle, uint16_t attr_handle,
                                             struct ble_gatt_access_ctxt *ctxt, void *arg)
 {
-    // Data Transfer特性は将来的な拡張用（現在未使用）
-    ESP_LOGD(TAG, "Data Transfer characteristic accessed (op: %d)", ctxt->op);
-
-    // 現在は未実装
-    if (ctxt->op == BLE_GATT_ACCESS_OP_READ_CHR || ctxt->op == BLE_GATT_ACCESS_OP_WRITE_CHR) {
-        ESP_LOGW(TAG, "Data Transfer operations not yet implemented");
-        return BLE_ATT_ERR_UNLIKELY;
-    }
-
     return 0;
 }
 
@@ -360,9 +268,7 @@ static int gatt_svr_access_data_transfer_cb(uint16_t conn_handle, uint16_t attr_
 static esp_err_t process_ble_command(const ble_command_packet_t *cmd_packet,
                                      uint8_t *response_buffer, size_t *response_length)
 {
-    ESP_LOGI(TAG, "Processing command: ID=0x%02X, Seq=%d, Len=%d",
-             cmd_packet->command_id, cmd_packet->sequence_num, cmd_packet->data_length);
-
+    ESP_LOGI(TAG, "Processing command: ID=0x%02X", cmd_packet->command_id);
     esp_err_t err = ESP_OK;
 
     switch (cmd_packet->command_id) {
@@ -394,21 +300,18 @@ static esp_err_t process_ble_command(const ble_command_packet_t *cmd_packet,
             err = handle_get_time_data(cmd_packet->data, cmd_packet->data_length, cmd_packet->sequence_num, response_buffer, response_length);
             break;
         case CMD_GET_SWITCH_STATUS: {
-            // スイッチ状態を取得
             uint8_t switch_state = switch_input_is_pressed();
-
             ble_response_packet_t *resp = (ble_response_packet_t *)response_buffer;
             resp->response_id = CMD_GET_SWITCH_STATUS;
-            resp->status_code = RESP_STATUS_SUCCESS;  // 成功ステータスに修正
+            resp->status_code = RESP_STATUS_SUCCESS;
             resp->sequence_num = cmd_packet->sequence_num;
             resp->data_length = sizeof(switch_state);
             memcpy(resp->data, &switch_state, sizeof(switch_state));
             *response_length = sizeof(ble_response_packet_t) + sizeof(switch_state);
-            err = ESP_OK;  // エラー状態と整合性を保つ
+            err = ESP_OK;
             break;
         }
         default: {
-            ESP_LOGW(TAG, "Unknown command ID: 0x%02X", cmd_packet->command_id);
             ble_response_packet_t *resp = (ble_response_packet_t *)response_buffer;
             resp->response_id = cmd_packet->command_id;
             resp->status_code = RESP_STATUS_INVALID_COMMAND;
@@ -422,7 +325,6 @@ static esp_err_t process_ble_command(const ble_command_packet_t *cmd_packet,
     return err;
 }
 
-/* --- Command Handlers --- */
 static esp_err_t handle_get_sensor_data(uint8_t sequence_num, uint8_t *response_buffer, size_t *response_length)
 {
     soil_data_t latest_data;
@@ -430,7 +332,6 @@ static esp_err_t handle_get_sensor_data(uint8_t sequence_num, uint8_t *response_
 
     esp_err_t ret = data_buffer_get_latest_minute_data(&minute_data);
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to get latest sensor data");
         ble_response_packet_t *resp = (ble_response_packet_t *)response_buffer;
         resp->response_id = CMD_GET_SENSOR_DATA;
         resp->status_code = RESP_STATUS_ERROR;
@@ -492,16 +393,12 @@ static esp_err_t handle_set_plant_profile(const uint8_t *data, uint16_t data_len
     } else {
         plant_profile_t profile;
         memcpy(&profile, data, sizeof(plant_profile_t));
-        ESP_LOGI(TAG, "New plant profile received: %s", profile.plant_name);
-
         esp_err_t err = nvs_config_save_plant_profile(&profile);
         if (err == ESP_OK) {
-            plant_manager_update_profile(&profile); // Update in-memory profile
+            plant_manager_update_profile(&profile);
             resp->status_code = RESP_STATUS_SUCCESS;
-            ESP_LOGI(TAG, "Plant profile saved to NVS and updated successfully.");
         } else {
             resp->status_code = RESP_STATUS_ERROR;
-            ESP_LOGE(TAG, "Failed to save plant profile to NVS.");
         }
     }
 
@@ -516,7 +413,7 @@ static esp_err_t handle_get_device_info(uint8_t sequence_num, uint8_t *response_
 
     strncpy(info.device_name, APP_NAME, sizeof(info.device_name) - 1);
     strncpy(info.firmware_version, SOFTWARE_VERSION, sizeof(info.firmware_version) - 1);
-    strncpy(info.hardware_version, HARDWARE_VERSION_STRING, sizeof(info.hardware_version) - 1); //修正箇所
+    strncpy(info.hardware_version, HARDWARE_VERSION_STRING, sizeof(info.hardware_version) - 1);
     info.uptime_seconds = g_system_uptime;
     info.total_sensor_readings = g_total_sensor_readings;
 
@@ -541,7 +438,6 @@ static esp_err_t handle_get_time_data(const uint8_t *data, uint16_t data_length,
     resp->sequence_num = sequence_num;
 
     if (data_length != sizeof(time_data_request_t)) {
-        ESP_LOGE(TAG, "GetTimeData: Invalid data length %d", data_length);
         resp->status_code = RESP_STATUS_INVALID_PARAMETER;
         resp->data_length = 0;
         *response_length = sizeof(ble_response_packet_t);
@@ -557,13 +453,11 @@ static esp_err_t handle_get_time_data(const uint8_t *data, uint16_t data_length,
     esp_err_t find_err = find_data_by_time(&requested_time_aligned, &result_data);
 
     if (find_err == ESP_OK) {
-        ESP_LOGI(TAG, "GetTimeData: Data found for requested time.");
         resp->status_code = RESP_STATUS_SUCCESS;
         resp->data_length = sizeof(time_data_response_t);
         memcpy(resp->data, &result_data, sizeof(time_data_response_t));
         *response_length = sizeof(ble_response_packet_t) + sizeof(time_data_response_t);
     } else {
-        ESP_LOGW(TAG, "GetTimeData: No data found for requested time.");
         resp->status_code = RESP_STATUS_ERROR;
         resp->data_length = 0;
         *response_length = sizeof(ble_response_packet_t);
@@ -572,27 +466,21 @@ static esp_err_t handle_get_time_data(const uint8_t *data, uint16_t data_length,
     return ESP_OK;
 }
 
-/* --- Helper Functions --- */
 static esp_err_t send_response_notification(const uint8_t *response_data, size_t response_length)
 {
     if (g_conn_handle == BLE_HS_CONN_HANDLE_NONE || !g_is_subscribed_response) {
-        ESP_LOGW(TAG, "Cannot send notification: No connection or not subscribed.");
         return ESP_FAIL;
     }
 
     struct os_mbuf *om = ble_hs_mbuf_from_flat(response_data, response_length);
     if (!om) {
-        ESP_LOGE(TAG, "Failed to allocate mbuf for notification");
         return ESP_ERR_NO_MEM;
     }
 
-    // 修正: Client用(gattc)ではなくServer用(gatts)のAPIを使用
     int rc = ble_gatts_notify_custom(g_conn_handle, g_response_handle, om);
     if (rc == 0) {
-        ESP_LOGI(TAG, "Response notification sent successfully (%zu bytes)", response_length);
         return ESP_OK;
     } else {
-        ESP_LOGE(TAG, "Error sending response notification; rc=%d", rc);
         return ESP_FAIL;
     }
 }
@@ -600,7 +488,6 @@ static esp_err_t send_response_notification(const uint8_t *response_data, size_t
 static esp_err_t find_data_by_time(const struct tm *target_time, time_data_response_t *result)
 {
     esp_err_t err;
-
     if (!target_time || !result) {
         return ESP_ERR_INVALID_ARG;
     }
@@ -609,17 +496,9 @@ static esp_err_t find_data_by_time(const struct tm *target_time, time_data_respo
     err = data_buffer_get_minute_data(target_time, &found_data);
 
     if (err == ESP_OK) {
-        ESP_LOGI(TAG, "Data found in data_buffer for time: %04d-%02d-%02d %02d:%02d",
-                 target_time->tm_year + 1900, target_time->tm_mon + 1, target_time->tm_mday,
-                 target_time->tm_hour, target_time->tm_min);
         memcpy(result, &found_data, sizeof(time_data_response_t));
         return ESP_OK;
-    } else if (err != ESP_ERR_NOT_FOUND) {
-        ESP_LOGE(TAG, "Error retrieving data from data_buffer: %s", esp_err_to_name(err));
-        return err;
     }
-
-    ESP_LOGW(TAG, "Data not found for the specified time.");
     return ESP_ERR_NOT_FOUND;
 }
 
@@ -650,18 +529,12 @@ static int gap_event_handler(struct ble_gap_event *event, void *arg)
         return 0;
 
     case BLE_GAP_EVENT_SUBSCRIBE:
-        ESP_LOGI(TAG, "Subscribe event; conn_handle=%d attr_handle=%d cur_notify=%d",
-                 event->subscribe.conn_handle, event->subscribe.attr_handle, event->subscribe.cur_notify);
-
         if (event->subscribe.attr_handle == g_sensor_data_handle) {
             g_is_subscribed_sensor = (event->subscribe.cur_notify != 0);
-            ESP_LOGI(TAG, "Sensor data subscription %s.", g_is_subscribed_sensor ? "enabled" : "disabled");
         } else if (event->subscribe.attr_handle == g_response_handle) {
             g_is_subscribed_response = (event->subscribe.cur_notify != 0);
-            ESP_LOGI(TAG, "Response subscription %s.", g_is_subscribed_response ? "enabled" : "disabled");
         } else if (event->subscribe.attr_handle == g_data_transfer_handle) {
             g_is_subscribed_data_transfer = (event->subscribe.cur_notify != 0);
-            ESP_LOGI(TAG, "Data transfer subscription %s.", g_is_subscribed_data_transfer ? "enabled" : "disabled");
         }
         return 0;
 
@@ -669,6 +542,13 @@ static int gap_event_handler(struct ble_gap_event *event, void *arg)
         ESP_LOGI(TAG, "MTU update event; conn_handle=%d cid=%d mtu=%d",
                  event->mtu.conn_handle, event->mtu.channel_id,
                  event->mtu.value);
+        return 0;
+
+    // --- 追加: ADV終了イベントのハンドリング ---
+    case BLE_GAP_EVENT_ADV_COMPLETE:
+        ESP_LOGI(TAG, "Advertising complete; reason=%d", event->adv_complete.reason);
+        // 必要であればここで再開処理を行う
+        // start_advertising();
         return 0;
     }
     return 0;
@@ -678,20 +558,14 @@ void start_advertising(void)
 {
     struct ble_gap_adv_params adv_params;
     struct ble_hs_adv_fields fields;
-    struct ble_hs_adv_fields scan_rsp_fields; // スキャンレスポンス用
+    struct ble_hs_adv_fields scan_rsp_fields;
     int rc;
 
-    /* --- アドバタイズデータの設定 (31バイト以内) --- */
     memset(&fields, 0, sizeof(fields));
-
-    // Flags (一般発見可能モード、BR/EDR非対応)
     fields.flags = BLE_HS_ADV_F_DISC_GEN | BLE_HS_ADV_F_BREDR_UNSUP;
-
-    // 送信電力レベル
     fields.tx_pwr_lvl_is_present = 1;
     fields.tx_pwr_lvl = BLE_HS_ADV_TX_PWR_LVL_AUTO;
 
-    // デバイス名
     const char *name = ble_svc_gap_device_name();
     fields.name = (uint8_t *)name;
     fields.name_len = strlen(name);
@@ -703,10 +577,7 @@ void start_advertising(void)
         return;
     }
 
-    /* --- スキャンレスポンスデータの設定 (31バイト以内) --- */
     memset(&scan_rsp_fields, 0, sizeof(scan_rsp_fields));
-
-    // 128-bit サービスUUID
     scan_rsp_fields.uuids128 = (ble_uuid128_t[]){gatt_svr_svc_uuid};
     scan_rsp_fields.num_uuids128 = 1;
     scan_rsp_fields.uuids128_is_complete = 1;
@@ -717,10 +588,10 @@ void start_advertising(void)
         return;
     }
 
-    /* --- アドバタイズ開始 --- */
     memset(&adv_params, 0, sizeof(adv_params));
-    adv_params.conn_mode = BLE_GAP_CONN_MODE_UND; // 接続可能
-    adv_params.disc_mode = BLE_GAP_DISC_MODE_GEN; // 一般発見可能モード
+    adv_params.conn_mode = BLE_GAP_CONN_MODE_UND;
+    adv_params.disc_mode = BLE_GAP_DISC_MODE_GEN;
+    
     rc = ble_gap_adv_start(g_own_addr_type, NULL, BLE_HS_FOREVER, &adv_params, gap_event_handler, NULL);
     if (rc != 0) {
         ESP_LOGE(TAG, "Error enabling advertisement; rc=%d", rc);
@@ -731,7 +602,13 @@ void start_advertising(void)
 
 static void on_sync(void)
 {
-    int rc = ble_hs_id_infer_auto(0, &g_own_addr_type);
+    // --- 追加: IDアドレスの保証 ---
+    int rc = ble_hs_util_ensure_addr(0);
+    if (rc != 0) {
+        ESP_LOGE(TAG, "Failed to ensure address: %d", rc);
+    }
+
+    rc = ble_hs_id_infer_auto(0, &g_own_addr_type);
     assert(rc == 0);
     start_advertising();
 }
@@ -748,35 +625,21 @@ void ble_host_task(void *param)
     nimble_port_freertos_deinit();
 }
 
-/**
- * @brief BLEデバイス名を生成
- * @param device_name 生成したデバイス名を格納するバッファ（最低20バイト必要）
- * @return ESP_OK: 成功, その他: エラー
- *
- * フォーマット: PlantMonitor_xx_yyyy
- * - xx: ハードウェアバージョン（10または20）
- * - yyyy: デバイスID（MACアドレスの下位2バイトを16進数で表示）
- */
 static esp_err_t generate_ble_device_name(char *device_name, size_t max_len)
 {
     if (device_name == NULL || max_len < 20) {
         return ESP_ERR_INVALID_ARG;
     }
 
-    // BLE MACアドレスを取得
     uint8_t mac[6];
     esp_err_t ret = esp_read_mac(mac, ESP_MAC_BT);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to read BLE MAC address: %s", esp_err_to_name(ret));
-        // フォールバック: デフォルト名
         snprintf(device_name, max_len, "PlantMonitor_%02d_0000", HARDWARE_VERSION);
         return ret;
     }
 
-    // デバイスID = MACアドレスの下位2バイト（16進数4桁）
     uint16_t device_id = (mac[4] << 8) | mac[5];
-
-    // デバイス名を生成: PlantMonitor_xx_yyyy
     snprintf(device_name, max_len, "PlantMonitor_%02d_%04X", HARDWARE_VERSION, device_id);
 
     ESP_LOGI(TAG, "Generated BLE device name: %s (MAC: %02X:%02X:%02X:%02X:%02X:%02X)",
@@ -789,26 +652,30 @@ esp_err_t ble_manager_init(void)
 {
     esp_err_t ret;
 
-    // Bluetooth Modem-sleepを有効化（省電力モード）
-    // これにより、BLEアドバタイジング中も接続可能で、自動的に必要時のみ復帰
-    ret = esp_bt_sleep_enable();
-    if (ret == ESP_OK) {
-        ESP_LOGI(TAG, "✅ Bluetooth Modem-sleep enabled");
-    } else {
-        ESP_LOGW(TAG, "⚠️  Bluetooth Modem-sleep enable failed: %s (continuing anyway)", esp_err_to_name(ret));
-    }
-
+    // 1. NimBLEポート初期化
     ret = nimble_port_init();
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to init nimble port: %d", ret);
         return ret;
     }
 
+    // 2. Bluetooth Modem-sleep有効化
+    //ret = esp_bt_sleep_enable();
+    if (ret == ESP_OK) {
+        ESP_LOGI(TAG, "✅ Bluetooth Modem-sleep enabled");
+    } else {
+        ESP_LOGW(TAG, "⚠️  Bluetooth Modem-sleep enable failed: %s (continuing anyway)", esp_err_to_name(ret));
+    }
+
     ESP_LOGI(TAG, "Initializing BLE Manager");
+    
+    // --- 追加: ストア設定の初期化 (必須) ---
+    //ble_store_config_init();
+
     ble_hs_cfg.reset_cb = on_reset;
     ble_hs_cfg.sync_cb = on_sync;
     ble_hs_cfg.gatts_register_cb = NULL;
-    ble_hs_cfg.store_status_cb = ble_store_util_status_rr;
+    //ble_hs_cfg.store_status_cb = ble_store_util_status_rr;
 
     ble_hs_cfg.sm_io_cap = BLE_SM_IO_CAP_NO_IO;
     ble_hs_cfg.sm_bonding = 0;
@@ -827,7 +694,6 @@ esp_err_t ble_manager_init(void)
         return ESP_FAIL;
     }
 
-    // BLEデバイス名を生成・設定
     char ble_device_name[32];
     ret = generate_ble_device_name(ble_device_name, sizeof(ble_device_name));
     if (ret == ESP_OK) {
@@ -835,7 +701,6 @@ esp_err_t ble_manager_init(void)
         assert(rc == 0);
         ESP_LOGI(TAG, "✅ BLE device name set: %s", ble_device_name);
     } else {
-        // フォールバック処理（すでにgenerate_ble_device_name内で設定済み）
         rc = ble_svc_gap_device_name_set(ble_device_name);
         assert(rc == 0);
         ESP_LOGW(TAG, "⚠️  Using fallback BLE device name: %s", ble_device_name);
