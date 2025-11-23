@@ -6,6 +6,12 @@
 #include "host/ble_hs.h" // ble_gap_event のためにインクルード
 #include "../plant_logic/plant_manager.h" // plant_profile_t のためにインクルード
 
+/* --- Constants --- */
+
+// バッファサイズ定数
+#define BLE_RESPONSE_BUFFER_SIZE    256     // レスポンスバッファサイズ
+#define BLE_DEVICE_NAME_MAX_LEN     32      // デバイス名最大長
+
 /* --- Command and Response Data Structures --- */
 
 // コマンドパケット

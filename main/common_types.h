@@ -12,6 +12,10 @@
 #include "components/sensors/moisture_sensor.h" // moisture_sensor_profile_t のために必要
 #include "components/actuators/switch_input.h" // switch_input_profile_t のために必要
 
+
+// WiFi機能の有効化設定
+#define CONFIG_WIFI_ENABLED 0
+
 // アプリケーション名
 #define APP_NAME "Plant Monitor"
 // ソフトウェアバージョン
@@ -43,7 +47,7 @@
 #endif
 
 // センシング間隔（ミリ秒）
-#define SENSOR_READ_INTERVAL_MS  60000  // 1分ごとにセンサー読み取り
+#define SENSOR_READ_INTERVAL_MS  10000  // 1分ごとにセンサー読み取り
 
 // センサー閾値
 #define MOISTURE_DRY_THRESHOLD    2000  // 乾燥閾値

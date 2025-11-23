@@ -58,26 +58,6 @@ static TimerHandle_t g_notify_timer;
 
 static void notify_timer_callback(TimerHandle_t xTimer);
 
-// I2Cバススキャン関数（デバッグ用）
-static void i2c_scan_bus(void) {
-    ESP_LOGI(TAG, "I2Cバススキャン開始...");
-    int devices_found = 0;
-
-    for (uint8_t addr = 1; addr < 127; addr++) {
-        esp_err_t ret = i2c_master_write_to_device(I2C_NUM_0, addr, NULL, 0, pdMS_TO_TICKS(50));
-        if (ret == ESP_OK) {
-            ESP_LOGI(TAG, "  I2Cデバイス検出: アドレス 0x%02X", addr);
-            devices_found++;
-        }
-    }
-
-    if (devices_found == 0) {
-        ESP_LOGW(TAG, "I2Cデバイスが見つかりませんでした");
-    } else {
-        ESP_LOGI(TAG, "合計 %d 個のI2Cデバイスが見つかりました", devices_found);
-    }
-}
-
 // I2C初期化
 static esp_err_t init_i2c(void) {
     i2c_config_t i2c_config = {
@@ -95,7 +75,6 @@ static esp_err_t init_i2c(void) {
     if (ret == ESP_OK) {
         ESP_LOGI(TAG, "I2C initialized successfully");
         vTaskDelay(pdMS_TO_TICKS(100)); // I2Cデバイスの安定化待機
-        i2c_scan_bus(); // バススキャン実行
     }
     return ret;
 }
@@ -394,12 +373,17 @@ void app_main(void) {
     ESP_LOGI(TAG, "✅ Power management configured (auto light-sleep with BLE modem-sleep)");
 #endif
 
+#if 0
+    ESP_LOGI(TAG, "WiFi機能が有効化されています");
     // WiFiと時刻同期の初期化
     ESP_ERROR_CHECK(wifi_manager_init(wifi_status_callback));
     ESP_ERROR_CHECK(time_sync_manager_init(time_sync_callback));
 
     // WiFi接続開始
-    network_init();
+        network_init();
+#else
+    ESP_LOGI(TAG, "WiFi機能は無効化されています");
+#endif
 
     xTaskCreate(sensor_read_task, "sensor_read", 4096, NULL, 5, &g_sensor_task_handle);
     xTaskCreate(status_analysis_task, "analysis_task", 6144, NULL, 4, &g_analysis_task_handle);
