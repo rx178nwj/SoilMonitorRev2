@@ -68,6 +68,7 @@ typedef enum {
     CMD_SET_CONFIG = 0x09,          // 設定変更
     CMD_GET_TIME_DATA = 0x0A,       // 指定時間データ取得
     CMD_GET_SWITCH_STATUS = 0x0B,   // スイッチ状態取得
+    CMD_GET_PLANT_PROFILE = 0x0C,   // 植物プロファイル取得
 } ble_command_id_t;
 
 typedef enum {

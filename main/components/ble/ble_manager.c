@@ -60,6 +60,7 @@ static esp_err_t process_ble_command(const ble_command_packet_t *cmd_packet, uin
 static esp_err_t handle_get_sensor_data(uint8_t sequence_num, uint8_t *response_buffer, size_t *response_length);
 static esp_err_t handle_get_system_status(uint8_t sequence_num, uint8_t *response_buffer, size_t *response_length);
 static esp_err_t handle_set_plant_profile(const uint8_t *data, uint16_t data_length, uint8_t sequence_num, uint8_t *response_buffer, size_t *response_length);
+static esp_err_t handle_get_plant_profile(uint8_t sequence_num, uint8_t *response_buffer, size_t *response_length);
 static esp_err_t handle_get_device_info(uint8_t sequence_num, uint8_t *response_buffer, size_t *response_length);
 static esp_err_t handle_get_time_data(const uint8_t *data, uint16_t data_length, uint8_t sequence_num, uint8_t *response_buffer, size_t *response_length);
 static esp_err_t find_data_by_time(const struct tm *target_time, time_data_response_t *result);
@@ -143,6 +144,10 @@ static const struct ble_gatt_svc_def gatt_svr_svcs[] = {
 static int gatt_svr_access_sensor_data_cb(uint16_t conn_handle, uint16_t attr_handle,
                               struct ble_gatt_access_ctxt *ctxt, void *arg)
 {
+    ESP_LOGI(TAG, "Sensor Data characteristic accessed");
+    ESP_LOGI(TAG, "Operation: %d", ctxt->op);
+    ESP_LOGI(TAG, "OM Length: %d", OS_MBUF_PKTLEN(ctxt->om));
+    
     switch (ctxt->op) {
     case BLE_GATT_ACCESS_OP_READ_CHR: {
         minute_data_t latest_data;
@@ -180,6 +185,10 @@ static int gatt_svr_access_sensor_data_cb(uint16_t conn_handle, uint16_t attr_ha
 static int gatt_svr_access_data_status_cb(uint16_t conn_handle, uint16_t attr_handle,
                               struct ble_gatt_access_ctxt *ctxt, void *arg)
 {
+    ESP_LOGI(TAG, "Data Status characteristic accessed");
+    ESP_LOGI(TAG, "Operation: %d", ctxt->op);
+    ESP_LOGI(TAG, "OM Length: %d", OS_MBUF_PKTLEN(ctxt->om));
+
     switch (ctxt->op) {
     case BLE_GATT_ACCESS_OP_READ_CHR: {
         data_buffer_stats_t stats;
@@ -208,6 +217,10 @@ static int gatt_svr_access_data_status_cb(uint16_t conn_handle, uint16_t attr_ha
 static int gatt_svr_access_command_cb(uint16_t conn_handle, uint16_t attr_handle,
                                       struct ble_gatt_access_ctxt *ctxt, void *arg)
 {
+    ESP_LOGI(TAG, "Command characteristic accessed");
+    ESP_LOGI(TAG, "Operation: %d", ctxt->op);
+    ESP_LOGI(TAG, "OM Length: %d", OS_MBUF_PKTLEN(ctxt->om));
+
     if (ctxt->op != BLE_GATT_ACCESS_OP_WRITE_CHR) {
         return BLE_ATT_ERR_WRITE_NOT_PERMITTED;
     }
@@ -243,6 +256,8 @@ static int gatt_svr_access_command_cb(uint16_t conn_handle, uint16_t attr_handle
         response_length = sizeof(ble_response_packet_t);
     }
 
+    ESP_LOGI(TAG, "Sending response notification, length=%d", response_length);
+    ESP_LOGI(TAG, "Response Data: ");
     send_response_notification(response_buffer, response_length);
 
     g_command_processing = false;
@@ -271,6 +286,7 @@ static esp_err_t process_ble_command(const ble_command_packet_t *cmd_packet,
     ESP_LOGI(TAG, "Processing command: ID=0x%02X", cmd_packet->command_id);
     esp_err_t err = ESP_OK;
 
+    ESP_LOGI(TAG, "Command Data Length: %d", cmd_packet->data_length);
     switch (cmd_packet->command_id) {
         case CMD_GET_SENSOR_DATA:
             err = handle_get_sensor_data(cmd_packet->sequence_num, response_buffer, response_length);
@@ -280,6 +296,9 @@ static esp_err_t process_ble_command(const ble_command_packet_t *cmd_packet,
             break;
         case CMD_SET_PLANT_PROFILE:
             err = handle_set_plant_profile(cmd_packet->data, cmd_packet->data_length, cmd_packet->sequence_num, response_buffer, response_length);
+            break;
+        case CMD_GET_PLANT_PROFILE:
+            err = handle_get_plant_profile(cmd_packet->sequence_num, response_buffer, response_length);
             break;
         case CMD_SYSTEM_RESET: {
             ble_response_packet_t *resp = (ble_response_packet_t *)response_buffer;
@@ -401,8 +420,37 @@ static esp_err_t handle_set_plant_profile(const uint8_t *data, uint16_t data_len
             resp->status_code = RESP_STATUS_ERROR;
         }
     }
+    // Debug logging
+    ESP_LOGI(TAG, "Plant profile set, status: %d", resp->status_code);
+    ESP_LOGI(TAG, "  Name: %s", ((plant_profile_t *)data)->plant_name);
+    ESP_LOGI(TAG, "  Soil Dry Threshold: %.2f mV", ((plant_profile_t *)data)->soil_dry_threshold);
+    ESP_LOGI(TAG, "  Soil Wet Threshold: %.2f mV", ((plant_profile_t *)data)->soil_wet_threshold);
+    ESP_LOGI(TAG, "  Soil Dry Days for Watering: %d days", ((plant_profile_t *)data)->soil_dry_days_for_watering);
+    ESP_LOGI(TAG, "  Temp High Limit: %.2f °C", ((plant_profile_t *)data)->temp_high_limit);
+    ESP_LOGI(TAG, "  Temp Low Limit: %.2f °C", ((plant_profile_t *)data)->temp_low_limit); 
 
     *response_length = sizeof(ble_response_packet_t);
+    return ESP_OK;
+}
+
+static esp_err_t handle_get_plant_profile(uint8_t sequence_num, uint8_t *response_buffer, size_t *response_length)
+{
+    ble_response_packet_t *resp = (ble_response_packet_t *)response_buffer;
+    resp->response_id = CMD_GET_PLANT_PROFILE;
+    resp->sequence_num = sequence_num;
+
+    const plant_profile_t *profile = plant_manager_get_profile();
+    if (profile != NULL) {
+        resp->status_code = RESP_STATUS_SUCCESS;
+        resp->data_length = sizeof(plant_profile_t);
+        memcpy(resp->data, profile, sizeof(plant_profile_t));
+        *response_length = sizeof(ble_response_packet_t) + sizeof(plant_profile_t);
+    } else {
+        resp->status_code = RESP_STATUS_ERROR;
+        resp->data_length = 0;
+        *response_length = sizeof(ble_response_packet_t);
+    }
+
     return ESP_OK;
 }
 
@@ -719,6 +767,8 @@ void print_ble_system_info(void)
     ESP_LOGI(TAG, "  - 0x05: System Reset");
     ESP_LOGI(TAG, "  - 0x06: Get Device Info");
     ESP_LOGI(TAG, "  - 0x0A: Get Time-Specific Data");
+    ESP_LOGI(TAG, "  - 0x0B: Get Switch Status");
+    ESP_LOGI(TAG, "  - 0x0C: Get Plant Profile");
     ESP_LOGI(TAG, "📡 BLE Characteristics:");
     ESP_LOGI(TAG, "  - Command: Write commands to device");
     ESP_LOGI(TAG, "  - Response: Read/Notify for command responses");
