@@ -1,385 +1,619 @@
-| Supported Targets | ESP32 | ESP32-C2 | ESP32-C3 | ESP32-C5 | ESP32-C6 | ESP32-C61 | ESP32-H2 | ESP32-S3 |
-| ----------------- | ----- | -------- | -------- | -------- | -------- | --------- | -------- | -------- |
+# Plant Monitor - SoilMonitorRev2
 
-# NimBLE GATT Server Example
+## 概要
 
-## Overview
+Plant Monitorは、ESP32-C6を使用した植物環境モニタリングシステムです。土壌水分、温度、湿度、照度をセンシングし、BLE (Bluetooth Low Energy)経由でデータを取得できます。
 
-This example is extended from NimBLE Connection Example, and further introduces
+### 主な機能
 
-1. How to implement a GATT server using GATT services table
-2. How to handle characteristic access requests
-    1. Write access demonstrated by LED control
-    2. Read and indicate access demonstrated by heart rate measurement(mocked)
+- **センサーモニタリング**
+  - 土壌水分センサー (ADC)
+  - 温湿度センサー (SHT40)
+  - 照度センサー (TSL2591)
+- **データ保存**
+  - 1分ごとのセンサーデータを24時間分保存
+  - NVSへの植物プロファイル保存
+- **BLE通信**
+  - コマンド/レスポンス方式でのデータ取得
+  - センサーデータのリアルタイム通知
+  - 過去データの時間指定取得
+- **視覚フィードバック**
+  - WS2812フルカラーLEDで植物状態を表示
+  - ステータスLED（青色/赤色）
 
-To test this demo, install *nRF Connect for Mobile* on your phone. 
+## ハードウェア情報
 
-Please refer to [BLE Introduction](https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-guides/ble/get-started/ble-introduction.html#:~:text=%E4%BE%8B%E7%A8%8B%E5%AE%9E%E8%B7%B5)
-for detailed example introduction and code explanation.
+| パラメータ | 値 |
+|-----------|-----|
+| ハードウェアバージョン | Rev2.0 (HARDWARE_VERSION=20) |
+| ソフトウェアバージョン | 2.0.0 |
+| 対応チップ | ESP32-C6 |
 
-## Try It Yourself
+### GPIO配置 (Rev2)
 
-### Set Target
+| 機能 | GPIO |
+|------|------|
+| 土壌水分センサー | GPIO3 (ADC1_CH3) |
+| I2C SDA | GPIO5 |
+| I2C SCL | GPIO6 |
+| スイッチ入力 | GPIO7 |
+| WS2812 LED | GPIO1 |
+| 青色LED | GPIO0 |
+| 赤色LED | GPIO2 |
 
-Before project configuration and build, be sure to set the correct chip target using:
+## ビルドとフラッシュ
 
-``` shell
-idf.py set-target <chip_name>
+### 1. WiFi認証情報の設定
+
+WiFi機能を使用する場合（`CONFIG_WIFI_ENABLED=1`の場合）、WiFi認証情報を設定する必要があります。
+
+```bash
+# サンプルファイルをコピー
+cp main/wifi_credentials.h.example main/wifi_credentials.h
+
+# エディタで実際のSSIDとパスワードを設定
+# main/wifi_credentials.h を編集してください
 ```
 
-For example, if you're using ESP32, then input
-
-``` Shell
-idf.py set-target esp32
+**main/wifi_credentials.h の例:**
+```c
+#define WIFI_SSID                "your-actual-ssid"
+#define WIFI_PASSWORD            "your-actual-password"
 ```
 
-### Build and Flash
+**注意:** `wifi_credentials.h` は `.gitignore` で除外されており、Gitリポジトリには含まれません。
 
-Run the following command to build, flash and monitor the project.
+### 2. ターゲット設定
 
-``` Shell
+```bash
+idf.py set-target esp32c6
+```
+
+### 3. ビルドとフラッシュ
+
+```bash
+idf.py build
 idf.py -p <PORT> flash monitor
 ```
 
-For example, if the corresponding serial port is `/dev/ttyACM0`, then it goes
-
-``` Shell
-idf.py -p /dev/ttyACM0 flash monitor
+例：
+```bash
+idf.py -p COM3 flash monitor
 ```
 
-(To exit the serial monitor, type ``Ctrl-]``.)
+(シリアルモニタを終了するには `Ctrl-]` を入力)
 
-See the [Getting Started Guide](https://idf.espressif.com/) for full steps to configure and use ESP-IDF to build projects.
+---
 
-## Code Explained
+# Bluetooth通信マニュアル
 
-### Overview
+## 接続情報
 
-1. Initialization
-    1. Initialize LED, NVS flash, NimBLE host stack, GAP service
-    2. Initialize GATT service and add services to registration queue
-    3. Configure NimBLE host stack and start NimBLE host task thread, GATT services will be registered automatically when NimBLE host stack started
-    4. Start heart rate update task thread
-2. Wait for NimBLE host stack to sync with BLE controller, and start advertising; wait for connection event to come
-3. After connection established, wait for GATT characteristics access events to come
-    1. On write LED event, turn on or off the LED accordingly
-    2. On read heart rate event, send out current heart rate measurement value
-    3. On indicate heart rate event, enable heart rate indication
+### デバイス名
 
-### Entry Point
+デバイスは起動時にMACアドレスから動的に生成されたBLE名でアドバタイズします：
 
-In this example, we call GATT `gatt_svr_init` function to initialize GATT server in `app_main` before NimBLE host configuration. This is a custom function defined in `gatt_svc.c`, and basically we just call GATT service initialization API and add services to registration queue.
-
-And there's another code added in `nimble_host_config_init`, which is 
-
-``` C
-static void nimble_host_config_init(void) {
-    ...
-
-    ble_hs_cfg.gatts_register_cb = gatt_svr_register_cb;
-
-    ...
-}
+```
+PlantMonitor_<HW_VERSION>_<DEVICE_ID>
 ```
 
-That is GATT server register callback function. In this case it will only print out some registration information when services, characteristics or descriptors are registered.
+- `HW_VERSION`: ハードウェアバージョン（Rev2の場合は`20`）
+- `DEVICE_ID`: BLE MACアドレスの下位2バイトから生成される4桁の16進数
 
-Then, after NimBLE host task thread is created, we'll create another task defined in `heart_rate_task` to update heart rate measurement mock value and send indication if enabled.
+例：`PlantMonitor_20_A1B2`
 
-### GAP Service Updates
+### サービスUUID
 
-`gap_event_handler` is updated with LED control removed, and more event handling branches, when compared to NimBLE Connection Example, including
+プライマリサービスUUID（128-bit）：
+```
+592F4612-9543-9999-12C8-58B459A2712D
+```
 
-- `BLE_GAP_EVENT_ADV_COMPLETE` - Advertising complete event
-- `BLE_GAP_EVENT_NOTIFY_TX` - Notificate event
-- `BLE_GAP_EVENT_SUBSCRIBE` - Subscribe event
-- `BLE_GAP_EVENT_MTU` - MTU update event
+## GATTキャラクタリスティック
 
-`BLE_GAP_EVENT_ADV_COMPLETE` and `BLE_GAP_EVENT_MTU` events are actually not involved in this example, but we still put them down there for reference. `BLE_GAP_EVENT_NOTIFY_TX` and `BLE_GAP_EVENT_SUBSCRIBE` events will be discussed in the next section.
+| 名称 | UUID | プロパティ | 説明 |
+|------|------|----------|------|
+| Sensor Data | `6A3B2C01-4E5F-6A7B-8C9D-E0F123456789` | Read, Notify | 最新のセンサーデータ |
+| Data Status | `6A3B2C1D-4E5F-6A7B-8C9D-E0F123456790` | Read, Write | データバッファのステータス |
+| Command | `6A3B2C1D-4E5F-6A7B-8C9D-E0F123456791` | Write, Write No Response | コマンド送信用 |
+| Response | `6A3B2C1D-4E5F-6A7B-8C9D-E0F123456792` | Read, Notify | コマンドレスポンス受信用 |
+| Data Transfer | `6A3B2C1D-4E5F-6A7B-8C9D-E0F123456793` | Read, Write, Notify | 大容量データ転送用 |
 
-### GATT Services Table
+---
 
-GATT services are defined in `ble_gatt_svc_def` struct array, with a variable name `gatt_svr_svcs` in this demo. We'll call it as the GATT services table in the following content.
+## コマンド/レスポンスプロトコル
 
-``` C
-/* Heart rate service */
-static const ble_uuid16_t heart_rate_svc_uuid = BLE_UUID16_INIT(0x180D);
+### コマンドパケット構造
 
-static uint8_t heart_rate_chr_val[2] = {0};
-static uint16_t heart_rate_chr_val_handle;
-static const ble_uuid16_t heart_rate_chr_uuid = BLE_UUID16_INIT(0x2A37);
+すべてのコマンドは以下の構造で送信します：
 
-static uint16_t heart_rate_chr_conn_handle = 0;
-static bool heart_rate_chr_conn_handle_inited = false;
-static bool heart_rate_ind_status = false;
+```c
+struct ble_command_packet {
+    uint8_t  command_id;      // コマンド識別子
+    uint8_t  sequence_num;    // シーケンス番号（0-255）
+    uint16_t data_length;     // データ長（リトルエンディアン）
+    uint8_t  data[];          // コマンドデータ（可変長）
+} __attribute__((packed));
+```
 
-/* Automation IO service */
-static const ble_uuid16_t auto_io_svc_uuid = BLE_UUID16_INIT(0x1815);
-static uint16_t led_chr_val_handle;
-static const ble_uuid128_t led_chr_uuid =
-    BLE_UUID128_INIT(0x23, 0xd1, 0xbc, 0xea, 0x5f, 0x78, 0x23, 0x15, 0xde, 0xef,
-                     0x12, 0x12, 0x25, 0x15, 0x00, 0x00);
+**送信先**: `Command` キャラクタリスティック
 
-/* GATT services table */
-static const struct ble_gatt_svc_def gatt_svr_svcs[] = {
-    /* Heart rate service */
-    {.type = BLE_GATT_SVC_TYPE_PRIMARY,
-     .uuid = &heart_rate_svc_uuid.u,
-     .characteristics =
-         (struct ble_gatt_chr_def[]){
-             {/* Heart rate characteristic */
-              .uuid = &heart_rate_chr_uuid.u,
-              .access_cb = heart_rate_chr_access,
-              .flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_INDICATE,
-              .val_handle = &heart_rate_chr_val_handle},
-             {
-                 0, /* No more characteristics in this service. */
-             }}},
+### レスポンスパケット構造
 
-    /* Automation IO service */
-    {
-        .type = BLE_GATT_SVC_TYPE_PRIMARY,
-        .uuid = &auto_io_svc_uuid.u,
-        .characteristics =
-            (struct ble_gatt_chr_def[]){/* LED characteristic */
-                                        {.uuid = &led_chr_uuid.u,
-                                         .access_cb = led_chr_access,
-                                         .flags = BLE_GATT_CHR_F_WRITE,
-                                         .val_handle = &led_chr_val_handle},
-                                        {0}},
-    },
-    
-    {
-        0, /* No more services. */
-    },
+すべてのレスポンスは以下の構造で受信します：
+
+```c
+struct ble_response_packet {
+    uint8_t  response_id;     // レスポンス識別子（コマンドIDと同じ）
+    uint8_t  status_code;     // ステータスコード
+    uint8_t  sequence_num;    // シーケンス番号（コマンドと同じ）
+    uint16_t data_length;     // レスポンスデータ長（リトルエンディアン）
+    uint8_t  data[];          // レスポンスデータ（可変長）
+} __attribute__((packed));
+```
+
+**受信元**: `Response` キャラクタリスティック（Notify推奨）
+
+### ステータスコード
+
+| コード | 名称 | 説明 |
+|--------|------|------|
+| 0x00 | SUCCESS | 成功 |
+| 0x01 | ERROR | エラー |
+| 0x02 | INVALID_COMMAND | 無効なコマンド |
+| 0x03 | INVALID_PARAMETER | 無効なパラメータ |
+| 0x04 | BUSY | ビジー状態 |
+| 0x05 | NOT_SUPPORTED | サポートされていない |
+
+---
+
+## コマンドリファレンス
+
+### 0x01: CMD_GET_SENSOR_DATA - 最新センサーデータ取得
+
+最新のセンサーデータを取得します。
+
+**コマンド**
+```
+command_id: 0x01
+sequence_num: <任意>
+data_length: 0x0000
+data: (なし)
+```
+
+**レスポンス**
+```c
+struct soil_data {
+    struct tm datetime;       // タイムスタンプ（44バイト）
+    float lux;                // 照度 [lux]
+    float temperature;        // 温度 [°C]
+    float humidity;           // 湿度 [%]
+    float soil_moisture;      // 土壌水分 [mV]
+} __attribute__((packed));
+```
+
+**サイズ**: 60バイト
+
+**struct tm構造**
+```c
+struct tm {
+    int tm_sec;      // 秒 (0-59)
+    int tm_min;      // 分 (0-59)
+    int tm_hour;     // 時 (0-23)
+    int tm_mday;     // 日 (1-31)
+    int tm_mon;      // 月 (0-11)
+    int tm_year;     // 年 (1900年からの経過年数)
+    int tm_wday;     // 曜日 (0-6, 日曜=0)
+    int tm_yday;     // 年内通算日 (0-365)
+    int tm_isdst;    // 夏時間フラグ
 };
 ```
 
-In this table, there are two GATT primary services defined
+---
 
-- Heart rate service with a UUID of `0x180D`
-- Automation IO service with a UUID of `0x1815`
+### 0x02: CMD_GET_SYSTEM_STATUS - システムステータス取得
 
-#### Automation IO Service
+システムの稼働状態を取得します。
 
-Under automation IO service, there's a LED characteristic, with a vendor-specific UUID and write only permission.
+**コマンド**
+```
+command_id: 0x02
+sequence_num: <任意>
+data_length: 0x0000
+data: (なし)
+```
 
-The characteristic is binded with `led_chr_access` callback function, in which the write access event is captured. The LED will be turned on or off according to the write value, quite straight-forward.
+**レスポンス**
 
-``` C
-static int led_chr_access(uint16_t conn_handle, uint16_t attr_handle,
-                          struct ble_gatt_access_ctxt *ctxt, void *arg) {
-    /* Local variables */
-    int rc;
+ASCII文字列で以下のフォーマット：
+```
+Uptime: <秒数> s, Free Heap: <バイト数>, Min Free: <バイト数>
+```
 
-    /* Handle access events */
-    /* Note: LED characteristic is write only */
-    switch (ctxt->op) {
+例：`Uptime: 3600 s, Free Heap: 245678, Min Free: 230000`
 
-    /* Write characteristic event */
-    case BLE_GATT_ACCESS_OP_WRITE_CHR:
-        /* Verify connection handle */
-        if (conn_handle != BLE_HS_CONN_HANDLE_NONE) {
-            ESP_LOGI(TAG, "characteristic write; conn_handle=%d attr_handle=%d",
-                     conn_handle, attr_handle);
-        } else {
-            ESP_LOGI(TAG,
-                     "characteristic write by nimble stack; attr_handle=%d",
-                     attr_handle);
+---
+
+### 0x03: CMD_SET_PLANT_PROFILE - 植物プロファイル設定
+
+植物の管理プロファイルを設定します。設定内容はNVSに保存されます。
+
+**コマンド**
+```
+command_id: 0x03
+sequence_num: <任意>
+data_length: 56 (sizeof(plant_profile_t))
+data: <plant_profile_t構造体>
+```
+
+**plant_profile_t構造**
+```c
+struct plant_profile {
+    char  plant_name[32];                 // 植物名（NULL終端文字列）
+    float soil_dry_threshold;             // 乾燥閾値 [mV] (例: 2500.0)
+    float soil_wet_threshold;             // 湿潤閾値 [mV] (例: 1000.0)
+    int   soil_dry_days_for_watering;     // 水やり判定日数 [日] (例: 3)
+    float temp_high_limit;                // 高温警告閾値 [°C] (例: 35.0)
+    float temp_low_limit;                 // 低温警告閾値 [°C] (例: 10.0)
+} __attribute__((packed));
+```
+
+**サイズ**: 56バイト
+
+**レスポンス**
+
+ステータスコードのみ（data_length = 0）
+
+---
+
+### 0x0C: CMD_GET_PLANT_PROFILE - 植物プロファイル取得
+
+現在設定されている植物プロファイルを取得します。
+
+**コマンド**
+```
+command_id: 0x0C
+sequence_num: <任意>
+data_length: 0x0000
+data: (なし)
+```
+
+**レスポンス**
+
+`plant_profile_t`構造体（56バイト）が返されます。構造は`CMD_SET_PLANT_PROFILE`と同じです。
+
+---
+
+### 0x05: CMD_SYSTEM_RESET - システムリセット
+
+デバイスを再起動します。
+
+**コマンド**
+```
+command_id: 0x05
+sequence_num: <任意>
+data_length: 0x0000
+data: (なし)
+```
+
+**レスポンス**
+
+ステータスコードのみ（data_length = 0）
+
+レスポンス送信後、約500ms後にデバイスが再起動します。
+
+---
+
+### 0x06: CMD_GET_DEVICE_INFO - デバイス情報取得
+
+デバイスの識別情報を取得します。
+
+**コマンド**
+```
+command_id: 0x06
+sequence_num: <任意>
+data_length: 0x0000
+data: (なし)
+```
+
+**レスポンス**
+```c
+struct device_info {
+    char device_name[32];           // デバイス名
+    char firmware_version[16];      // ファームウェアバージョン
+    char hardware_version[16];      // ハードウェアバージョン
+    uint32_t uptime_seconds;        // 稼働時間 [秒]
+    uint32_t total_sensor_readings; // センサー読み取り総回数
+} __attribute__((packed));
+```
+
+**サイズ**: 72バイト
+
+---
+
+### 0x0A: CMD_GET_TIME_DATA - 時間指定データ取得
+
+指定した時刻のセンサーデータを取得します（24時間分のバッファから検索）。
+
+**コマンド**
+```
+command_id: 0x0A
+sequence_num: <任意>
+data_length: 44 (sizeof(time_data_request_t))
+data: <time_data_request_t構造体>
+```
+
+**time_data_request_t構造**
+```c
+struct time_data_request {
+    struct tm requested_time;  // 取得したい時刻
+} __attribute__((packed));
+```
+
+**レスポンス**
+```c
+struct time_data_response {
+    struct tm actual_time;     // 実際に見つかったデータの時刻
+    float temperature;         // 温度 [°C]
+    float humidity;            // 湿度 [%]
+    float lux;                 // 照度 [lux]
+    float soil_moisture;       // 土壌水分 [mV]
+} __attribute__((packed));
+```
+
+**サイズ**: 60バイト
+
+データが見つからない場合、`status_code`が`RESP_STATUS_ERROR`になります。
+
+---
+
+### 0x0B: CMD_GET_SWITCH_STATUS - スイッチ状態取得
+
+デバイスのスイッチ入力状態を取得します。
+
+**コマンド**
+```
+command_id: 0x0B
+sequence_num: <任意>
+data_length: 0x0000
+data: (なし)
+```
+
+**レスポンス**
+
+1バイトのスイッチ状態：
+- `0x00`: スイッチOFF（非押下）
+- `0x01`: スイッチON（押下）
+
+---
+
+## 通信例
+
+### Python実装例（bleak使用）
+
+```python
+import asyncio
+from bleak import BleakClient, BleakScanner
+import struct
+
+# UUIDs
+SERVICE_UUID = "592F4612-9543-9999-12C8-58B459A2712D"
+COMMAND_UUID = "6A3B2C1D-4E5F-6A7B-8C9D-E0F123456791"
+RESPONSE_UUID = "6A3B2C1D-4E5F-6A7B-8C9D-E0F123456792"
+
+class PlantMonitor:
+    def __init__(self):
+        self.client = None
+        self.response_data = None
+
+    async def connect(self, device_name_prefix="PlantMonitor"):
+        """デバイスに接続"""
+        devices = await BleakScanner.discover()
+        device = None
+
+        for d in devices:
+            if d.name and d.name.startswith(device_name_prefix):
+                device = d
+                break
+
+        if not device:
+            raise Exception(f"Device with prefix '{device_name_prefix}' not found")
+
+        self.client = BleakClient(device.address)
+        await self.client.connect()
+
+        # Responseキャラクタリスティックの通知を有効化
+        await self.client.start_notify(RESPONSE_UUID, self._notification_handler)
+
+    def _notification_handler(self, sender, data):
+        """レスポンス通知ハンドラ"""
+        self.response_data = data
+
+    async def send_command(self, command_id, data=b"", sequence_num=0):
+        """コマンド送信"""
+        packet = struct.pack("<BBH", command_id, sequence_num, len(data)) + data
+        await self.client.write_gatt_char(COMMAND_UUID, packet, response=False)
+
+        # レスポンス待機
+        timeout = 50  # 5秒
+        for _ in range(timeout):
+            if self.response_data:
+                break
+            await asyncio.sleep(0.1)
+
+        if not self.response_data:
+            raise Exception("Response timeout")
+
+        # レスポンスをパース
+        resp_id, status, resp_seq, data_len = struct.unpack("<BBHH", self.response_data[:6])
+        resp_data = self.response_data[6:]
+
+        self.response_data = None  # リセット
+
+        return {
+            "response_id": resp_id,
+            "status": status,
+            "sequence_num": resp_seq,
+            "data": resp_data
         }
 
-        /* Verify attribute handle */
-        if (attr_handle == led_chr_val_handle) {
-            /* Verify access buffer length */
-            if (ctxt->om->om_len == 1) {
-                /* Turn the LED on or off according to the operation bit */
-                if (ctxt->om->om_data[0]) {
-                    led_on();
-                    ESP_LOGI(TAG, "led turned on!");
-                } else {
-                    led_off();
-                    ESP_LOGI(TAG, "led turned off!");
-                }
-            } else {
-                goto error;
-            }
-            return rc;
-        }
-        goto error;
+    async def get_sensor_data(self):
+        """最新センサーデータ取得"""
+        resp = await self.send_command(0x01)
 
-    /* Unknown event */
-    default:
-        goto error;
-    }
+        if resp["status"] != 0x00:
+            raise Exception(f"Command failed with status {resp['status']}")
 
-error:
-    ESP_LOGE(TAG,
-             "unexpected access operation to led characteristic, opcode: %d",
-             ctxt->op);
-    return BLE_ATT_ERR_UNLIKELY;
-}
-```
+        # struct tmをパース（9個のint = 36バイト）
+        tm_data = struct.unpack("<9i", resp["data"][:36])
+        sensor_data = struct.unpack("<ffff", resp["data"][36:52])
 
-#### Heart Rate Service
-
-Under heart rate service, there's a heart rate measurement characteristic, with a UUID of `0x2A37` and read + indicate access permission.
-
-The characteristic is binded with `heart_rate_chr_access` callback function, in which the read access event is captured. It should be mentioned that in SIG definition, heart rate measurement is a multi-byte data structure, with the first byte indicating the flags
-
-- Bit 0: Heart rate value type
-    - 0: Heart rate value is `uint8_t` type
-    - 1: Heart rate value is `uint16_t` type
-- Bit 1: Sensor contact status
-- Bit 2: Sensor contact supported
-- Bit 3: Energy expended status
-- Bit 4: RR-interval status
-- Bit 5-7: Reserved
-
-and the rest of bytes are data fields. In this case, we use `uint8_t` type and disable other features, making the characteristic value a 2-byte array. So when characteristic read event arrives, we'll get the latest heart rate value and send it back to peer device.
-
-``` C
-static int heart_rate_chr_access(uint16_t conn_handle, uint16_t attr_handle,
-                                 struct ble_gatt_access_ctxt *ctxt, void *arg) {
-    /* Local variables */
-    int rc;
-
-    /* Handle access events */
-    /* Note: Heart rate characteristic is read only */
-    switch (ctxt->op) {
-
-    /* Read characteristic event */
-    case BLE_GATT_ACCESS_OP_READ_CHR:
-        /* Verify connection handle */
-        if (conn_handle != BLE_HS_CONN_HANDLE_NONE) {
-            ESP_LOGI(TAG, "characteristic read; conn_handle=%d attr_handle=%d",
-                     conn_handle, attr_handle);
-        } else {
-            ESP_LOGI(TAG, "characteristic read by nimble stack; attr_handle=%d",
-                     attr_handle);
+        return {
+            "timestamp": tm_data,
+            "lux": sensor_data[0],
+            "temperature": sensor_data[1],
+            "humidity": sensor_data[2],
+            "soil_moisture": sensor_data[3]
         }
 
-        /* Verify attribute handle */
-        if (attr_handle == heart_rate_chr_val_handle) {
-            /* Update access buffer value */
-            heart_rate_chr_val[1] = get_heart_rate();
-            rc = os_mbuf_append(ctxt->om, &heart_rate_chr_val,
-                                sizeof(heart_rate_chr_val));
-            return rc == 0 ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES;
+    async def set_plant_profile(self, name, dry_threshold, wet_threshold,
+                                dry_days, temp_high, temp_low):
+        """植物プロファイル設定"""
+        # 名前を32バイトにパディング
+        name_bytes = name.encode('utf-8')[:31].ljust(32, b'\x00')
+
+        # プロファイルデータをパック
+        data = name_bytes + struct.pack("<ffiff",
+            dry_threshold, wet_threshold, dry_days, temp_high, temp_low)
+
+        resp = await self.send_command(0x03, data)
+        return resp["status"] == 0x00
+
+    async def get_plant_profile(self):
+        """植物プロファイル取得"""
+        resp = await self.send_command(0x0C)
+
+        if resp["status"] != 0x00:
+            raise Exception(f"Command failed with status {resp['status']}")
+
+        # プロファイルをパース
+        name = resp["data"][:32].decode('utf-8').rstrip('\x00')
+        values = struct.unpack("<ffiff", resp["data"][32:56])
+
+        return {
+            "plant_name": name,
+            "soil_dry_threshold": values[0],
+            "soil_wet_threshold": values[1],
+            "soil_dry_days_for_watering": values[2],
+            "temp_high_limit": values[3],
+            "temp_low_limit": values[4]
         }
-        goto error;
 
-    /* Unknown event */
-    default:
-        goto error;
-    }
+    async def get_device_info(self):
+        """デバイス情報取得"""
+        resp = await self.send_command(0x06)
 
-error:
-    ESP_LOGE(
-        TAG,
-        "unexpected access operation to heart rate characteristic, opcode: %d",
-        ctxt->op);
-    return BLE_ATT_ERR_UNLIKELY;
-}
+        if resp["status"] != 0x00:
+            raise Exception(f"Command failed with status {resp['status']}")
+
+        name = resp["data"][:32].decode('utf-8').rstrip('\x00')
+        fw_ver = resp["data"][32:48].decode('utf-8').rstrip('\x00')
+        hw_ver = resp["data"][48:64].decode('utf-8').rstrip('\x00')
+        uptime, readings = struct.unpack("<II", resp["data"][64:72])
+
+        return {
+            "device_name": name,
+            "firmware_version": fw_ver,
+            "hardware_version": hw_ver,
+            "uptime_seconds": uptime,
+            "total_sensor_readings": readings
+        }
+
+    async def disconnect(self):
+        """切断"""
+        if self.client:
+            await self.client.disconnect()
+
+# 使用例
+async def main():
+    monitor = PlantMonitor()
+
+    try:
+        await monitor.connect()
+        print("Connected!")
+
+        # デバイス情報取得
+        info = await monitor.get_device_info()
+        print(f"Device: {info['device_name']}")
+        print(f"FW Version: {info['firmware_version']}")
+
+        # センサーデータ取得
+        data = await monitor.get_sensor_data()
+        print(f"Temperature: {data['temperature']:.1f}°C")
+        print(f"Humidity: {data['humidity']:.1f}%")
+        print(f"Lux: {data['lux']:.0f} lux")
+        print(f"Soil Moisture: {data['soil_moisture']:.0f} mV")
+
+        # プロファイル設定
+        await monitor.set_plant_profile(
+            name="Tomato",
+            dry_threshold=2500.0,
+            wet_threshold=1000.0,
+            dry_days=3,
+            temp_high=35.0,
+            temp_low=10.0
+        )
+        print("Profile set!")
+
+        # プロファイル取得
+        profile = await monitor.get_plant_profile()
+        print(f"Current Profile: {profile['plant_name']}")
+
+    finally:
+        await monitor.disconnect()
+
+if __name__ == "__main__":
+    asyncio.run(main())
 ```
 
-Indicate access, however, is a bit more complicated. As mentioned in *GAP Service Updates*, we'll handle another 2 events namely `BLE_GAP_EVENT_NOTIFY_TX` and `BLE_GAP_EVENT_SUBSCRIBE` in `gap_event_handler`. In this case, if peer device wants to enable heart rate measurement indication, it will send a subscribe request to the local device, and the request will be captured as a subscribe event in `gap_event_handler`. But from the perspective of software layering, the event should be handled in GATT server, so we just pass the event to GATT server by calling `gatt_svr_subscribe_cb`, as demonstrated in the demo
+---
 
-``` C
-static int gap_event_handler(struct ble_gap_event *event, void *arg) {
-    ...
+## データ型とエンディアン
 
-    /* Subscribe event */
-    case BLE_GAP_EVENT_SUBSCRIBE:
-        /* Print subscription info to log */
-        ESP_LOGI(TAG,
-                    "subscribe event; conn_handle=%d attr_handle=%d "
-                    "reason=%d prevn=%d curn=%d previ=%d curi=%d",
-                    event->subscribe.conn_handle, event->subscribe.attr_handle,
-                    event->subscribe.reason, event->subscribe.prev_notify,
-                    event->subscribe.cur_notify, event->subscribe.prev_indicate,
-                    event->subscribe.cur_indicate);
+- **整数型**: リトルエンディアン
+- **浮動小数点**: IEEE 754形式（32-bit単精度）
+- **文字列**: NULL終端、UTF-8エンコーディング
+- **構造体**: パック構造（アライメントなし）
 
-        /* GATT subscribe event callback */
-        gatt_svr_subscribe_cb(event);
-        return rc;
-    
-    ...
-}
-```
+---
 
-Then we'll check connection handle and attribute handle, if the attribute handle matches `heart_rate_chr_val_chandle`, `heart_rate_chr_conn_handle` and `heart_rate_ind_status` will be updated together. 
+## トラブルシューティング
 
-``` C
-void gatt_svr_subscribe_cb(struct ble_gap_event *event) {
-    /* Check connection handle */
-    if (event->subscribe.conn_handle != BLE_HS_CONN_HANDLE_NONE) {
-        ESP_LOGI(TAG, "subscribe event; conn_handle=%d attr_handle=%d",
-                 event->subscribe.conn_handle, event->subscribe.attr_handle);
-    } else {
-        ESP_LOGI(TAG, "subscribe by nimble stack; attr_handle=%d",
-                 event->subscribe.attr_handle);
-    }
+### 接続できない
 
-    /* Check attribute handle */
-    if (event->subscribe.attr_handle == heart_rate_chr_val_handle) {
-        /* Update heart rate subscription status */
-        heart_rate_chr_conn_handle = event->subscribe.conn_handle;
-        heart_rate_chr_conn_handle_inited = true;
-        heart_rate_ind_status = event->subscribe.cur_indicate;
-    }
-}
-```
+1. デバイスが電源投入され、BLEアドバタイジング中か確認
+2. デバイス名が正しいか確認（`PlantMonitor_XX_XXXX`形式）
+3. 他のBLEデバイスとの干渉を確認
+4. ESP32-C6のBLE機能が有効か確認
 
-Notice that heart rate measurement incation is handled in `heart_rate_task` by calling `send_heart_rate_indication` function periodically. Actually, this function will check heart rate indication status and send indication accordingly. In this way, heart rate indication is implemented.
+### レスポンスが返ってこない
 
-``` C
-void send_heart_rate_indication(void) {
-    if (heart_rate_ind_status && heart_rate_chr_conn_handle_inited) {
-        ble_gatts_indicate(heart_rate_chr_conn_handle,
-                           heart_rate_chr_val_handle);
-        ESP_LOGI(TAG, "heart rate indication sent!");
-    }
-}
+1. `Response`キャラクタリスティックの通知が有効になっているか確認
+2. シーケンス番号が正しく設定されているか確認
+3. コマンドパケットのバイトオーダーを確認（リトルエンディアン）
 
-static void heart_rate_task(void *param) {
-    /* Task entry log */
-    ESP_LOGI(TAG, "heart rate task has been started!");
+### データが正しく取得できない
 
-    /* Loop forever */
-    while (1) {
-        /* Update heart rate value every 1 second */
-        update_heart_rate();
-        ESP_LOGI(TAG, "heart rate updated to %d", get_heart_rate());
+1. 構造体のパディングとアライメントを確認
+2. データ長が正しいか確認
+3. ステータスコードを確認（0x00が成功）
 
-        /* Send heart rate indication if enabled */
-        send_heart_rate_indication();
+---
 
-        /* Sleep */
-        vTaskDelay(HEART_RATE_TASK_PERIOD);
-    }
+## ライセンス
 
-    /* Clean up at exit */
-    vTaskDelete(NULL);
-}
-```
+このプロジェクトはESP-IDFのサンプルコードをベースにしています。
 
-## Observation
+## 問い合わせ
 
-If everything goes well, you should be able to see 4 services when connected to ESP32, including
-
-- Generic Access
-- Generic Attribute
-- Heart Rate
-- Automation IO
-
-Click on Automation IO Service, you should be able to see LED characteristic. Click on upload button, you should be able to write `ON` or `OFF` value. Send it to the device, LED will be turned on or off following your instruction.
-
-Click on Heart Rate Service, you should be able to see Heart Rate Measurement characteristic. Click on download button, you should be able to see the latest heart rate measurement mock value, and it should be consistent with what is shown on serial output. Click on subscribe button, you should be able to see the heart rate measurement mock value updated every second.
-
-## Troubleshooting
-
-For any technical queries, please file an [issue](https://github.com/espressif/esp-idf/issues) on GitHub. We will get back to you soon.
-#   S o i l M o n i t o r R e v 1  
- #   S o i l M o n i t o r R e v 1  
- #   S o i l M o n i t o r R e v 1  
- 
+技術的な質問については、GitHubのIssueで報告してください。

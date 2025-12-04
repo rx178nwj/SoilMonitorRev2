@@ -1,3 +1,6 @@
 .vscode
 build/
 .devcontainer/
+
+# WiFi認証情報（セキュリティのため除外）
+main/wifi_credentials.h

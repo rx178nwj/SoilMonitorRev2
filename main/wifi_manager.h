@@ -11,16 +11,10 @@
 extern "C" {
 #endif
 
-// WiFi設定
-#define WIFI_SSID                "zodiac"
-#define WIFI_PASSWORD            "0d58c26d55876"
-#define WIFI_SSID1               "zodiac2_24G"
-#define WIFI_PASSWORD1            "11060062hgp4y"
-#define WIFI_SSID2                "zodiac2"
-#define WIFI_PASSWORD2            "11060062hgp4y"
-
-#define WIFI_MAXIMUM_RETRY       5
-#define WIFI_CONNECT_TIMEOUT_SEC 30
+// WiFi認証情報をインクルード
+// 注意: wifi_credentials.h は Git 管理外です
+// wifi_credentials.h.example をコピーして作成してください
+#include "wifi_credentials.h"
 
 // WiFi状態コールバック関数型
 typedef void (*wifi_status_callback_t)(bool connected);
