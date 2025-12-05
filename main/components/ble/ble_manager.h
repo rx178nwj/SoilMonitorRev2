@@ -54,6 +54,12 @@ typedef struct __attribute__((packed)) {
     uint32_t total_sensor_readings;
 } device_info_t;
 
+// WiFi設定構造体
+typedef struct __attribute__((packed)) {
+    char ssid[32];          // SSID（NULL終端文字列）
+    char password[64];      // パスワード（NULL終端文字列）
+} wifi_config_data_t;
+
 /* --- Command and Response Enums --- */
 
 typedef enum {
@@ -69,6 +75,8 @@ typedef enum {
     CMD_GET_TIME_DATA = 0x0A,       // 指定時間データ取得
     CMD_GET_SWITCH_STATUS = 0x0B,   // スイッチ状態取得
     CMD_GET_PLANT_PROFILE = 0x0C,   // 植物プロファイル取得
+    CMD_SET_WIFI_CONFIG = 0x0D,     // WiFi設定（SSID/パスワード）
+    CMD_GET_WIFI_CONFIG = 0x0E,     // WiFi設定取得
 } ble_command_id_t;
 
 typedef enum {

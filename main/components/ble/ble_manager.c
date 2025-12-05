@@ -63,6 +63,8 @@ static esp_err_t handle_set_plant_profile(const uint8_t *data, uint16_t data_len
 static esp_err_t handle_get_plant_profile(uint8_t sequence_num, uint8_t *response_buffer, size_t *response_length);
 static esp_err_t handle_get_device_info(uint8_t sequence_num, uint8_t *response_buffer, size_t *response_length);
 static esp_err_t handle_get_time_data(const uint8_t *data, uint16_t data_length, uint8_t sequence_num, uint8_t *response_buffer, size_t *response_length);
+static esp_err_t handle_set_wifi_config(const uint8_t *data, uint16_t data_length, uint8_t sequence_num, uint8_t *response_buffer, size_t *response_length);
+static esp_err_t handle_get_wifi_config(uint8_t sequence_num, uint8_t *response_buffer, size_t *response_length);
 static esp_err_t find_data_by_time(const struct tm *target_time, time_data_response_t *result);
 static esp_err_t send_response_notification(const uint8_t *response_data, size_t response_length);
 
@@ -330,6 +332,12 @@ static esp_err_t process_ble_command(const ble_command_packet_t *cmd_packet,
             err = ESP_OK;
             break;
         }
+        case CMD_SET_WIFI_CONFIG:
+            err = handle_set_wifi_config(cmd_packet->data, cmd_packet->data_length, cmd_packet->sequence_num, response_buffer, response_length);
+            break;
+        case CMD_GET_WIFI_CONFIG:
+            err = handle_get_wifi_config(cmd_packet->sequence_num, response_buffer, response_length);
+            break;
         default: {
             ble_response_packet_t *resp = (ble_response_packet_t *)response_buffer;
             resp->response_id = cmd_packet->command_id;
@@ -450,6 +458,70 @@ static esp_err_t handle_get_plant_profile(uint8_t sequence_num, uint8_t *respons
         resp->data_length = 0;
         *response_length = sizeof(ble_response_packet_t);
     }
+
+    return ESP_OK;
+}
+
+static esp_err_t handle_set_wifi_config(const uint8_t *data, uint16_t data_length, uint8_t sequence_num, uint8_t *response_buffer, size_t *response_length)
+{
+    ble_response_packet_t *resp = (ble_response_packet_t *)response_buffer;
+    resp->response_id = CMD_SET_WIFI_CONFIG;
+    resp->sequence_num = sequence_num;
+    resp->data_length = 0;
+
+    if (data_length != sizeof(wifi_config_data_t)) {
+        resp->status_code = RESP_STATUS_INVALID_PARAMETER;
+        ESP_LOGE(TAG, "Invalid WiFi config data length: %d (expected %d)", data_length, sizeof(wifi_config_data_t));
+    } else {
+        wifi_config_data_t wifi_data;
+        memcpy(&wifi_data, data, sizeof(wifi_config_data_t));
+
+        // NULL終端を保証
+        wifi_data.ssid[sizeof(wifi_data.ssid) - 1] = '\0';
+        wifi_data.password[sizeof(wifi_data.password) - 1] = '\0';
+
+        // グローバルWiFi設定を更新
+        memset(&g_wifi_config, 0, sizeof(wifi_config_t));
+        strncpy((char*)g_wifi_config.sta.ssid, wifi_data.ssid, sizeof(g_wifi_config.sta.ssid) - 1);
+        strncpy((char*)g_wifi_config.sta.password, wifi_data.password, sizeof(g_wifi_config.sta.password) - 1);
+        g_wifi_config.sta.threshold.authmode = WIFI_AUTH_WPA2_PSK;
+
+        // WiFi設定を適用
+        esp_err_t err = esp_wifi_set_config(WIFI_IF_STA, &g_wifi_config);
+        if (err == ESP_OK) {
+            resp->status_code = RESP_STATUS_SUCCESS;
+            ESP_LOGI(TAG, "WiFi config updated - SSID: %s", wifi_data.ssid);
+        } else {
+            resp->status_code = RESP_STATUS_ERROR;
+            ESP_LOGE(TAG, "Failed to set WiFi config: %s", esp_err_to_name(err));
+        }
+    }
+
+    *response_length = sizeof(ble_response_packet_t);
+    return ESP_OK;
+}
+
+static esp_err_t handle_get_wifi_config(uint8_t sequence_num, uint8_t *response_buffer, size_t *response_length)
+{
+    ble_response_packet_t *resp = (ble_response_packet_t *)response_buffer;
+    resp->response_id = CMD_GET_WIFI_CONFIG;
+    resp->sequence_num = sequence_num;
+
+    wifi_config_data_t wifi_data;
+    memset(&wifi_data, 0, sizeof(wifi_config_data_t));
+
+    // 現在のWiFi設定を取得
+    strncpy(wifi_data.ssid, (char*)g_wifi_config.sta.ssid, sizeof(wifi_data.ssid) - 1);
+    // セキュリティのため、パスワードはマスク表示（最初の3文字のみ表示）
+    if (strlen((char*)g_wifi_config.sta.password) > 0) {
+        strncpy(wifi_data.password, (char*)g_wifi_config.sta.password, 3);
+        strcat(wifi_data.password, "***");
+    }
+
+    resp->status_code = RESP_STATUS_SUCCESS;
+    resp->data_length = sizeof(wifi_config_data_t);
+    memcpy(resp->data, &wifi_data, sizeof(wifi_config_data_t));
+    *response_length = sizeof(ble_response_packet_t) + sizeof(wifi_config_data_t);
 
     return ESP_OK;
 }
@@ -769,6 +841,8 @@ void print_ble_system_info(void)
     ESP_LOGI(TAG, "  - 0x0A: Get Time-Specific Data");
     ESP_LOGI(TAG, "  - 0x0B: Get Switch Status");
     ESP_LOGI(TAG, "  - 0x0C: Get Plant Profile");
+    ESP_LOGI(TAG, "  - 0x0D: Set WiFi Config (SSID/Password)");
+    ESP_LOGI(TAG, "  - 0x0E: Get WiFi Config");
     ESP_LOGI(TAG, "📡 BLE Characteristics:");
     ESP_LOGI(TAG, "  - Command: Write commands to device");
     ESP_LOGI(TAG, "  - Response: Read/Notify for command responses");
