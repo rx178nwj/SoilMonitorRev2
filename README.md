@@ -387,6 +387,61 @@ data: (なし)
 
 ---
 
+### 0x0D: CMD_SET_WIFI_CONFIG - WiFi設定
+
+WiFiのSSIDとパスワードを設定します。設定は即座に適用されます。
+
+**コマンド**
+```
+command_id: 0x0D
+sequence_num: <任意>
+data_length: 96 (sizeof(wifi_config_data_t))
+data: <wifi_config_data_t構造体>
+```
+
+**wifi_config_data_t構造**
+```c
+struct wifi_config_data {
+    char ssid[32];          // SSID（NULL終端文字列）
+    char password[64];      // パスワード（NULL終端文字列）
+} __attribute__((packed));
+```
+
+**サイズ**: 96バイト
+
+**レスポンス**
+
+ステータスコードのみ（data_length = 0）
+
+**注意事項**:
+- WiFi設定は即座に`esp_wifi_set_config()`で適用されます
+- WiFi再接続が必要な場合は別途接続処理を実行してください
+- SSID/パスワードは自動的にNULL終端されます
+
+---
+
+### 0x0E: CMD_GET_WIFI_CONFIG - WiFi設定取得
+
+現在設定されているWiFi設定を取得します。
+
+**コマンド**
+```
+command_id: 0x0E
+sequence_num: <任意>
+data_length: 0x0000
+data: (なし)
+```
+
+**レスポンス**
+
+`wifi_config_data_t`構造体（96バイト）が返されます。
+
+**セキュリティ機能**:
+- パスワードはマスク表示されます（最初の3文字 + "***"）
+- 例: 実際のパスワードが"mypassword"の場合、"myp***"として返されます
+
+---
+
 ## 通信例
 
 ### Python実装例（bleak使用）
@@ -529,6 +584,34 @@ class PlantMonitor:
             "total_sensor_readings": readings
         }
 
+    async def set_wifi_config(self, ssid, password):
+        """WiFi設定"""
+        # SSIDとパスワードを固定長にパディング
+        ssid_bytes = ssid.encode('utf-8')[:31].ljust(32, b'\x00')
+        password_bytes = password.encode('utf-8')[:63].ljust(64, b'\x00')
+
+        # WiFi設定データをパック
+        data = ssid_bytes + password_bytes
+
+        resp = await self.send_command(0x0D, data)
+        return resp["status"] == 0x00
+
+    async def get_wifi_config(self):
+        """WiFi設定取得"""
+        resp = await self.send_command(0x0E)
+
+        if resp["status"] != 0x00:
+            raise Exception(f"Command failed with status {resp['status']}")
+
+        # WiFi設定をパース
+        ssid = resp["data"][:32].decode('utf-8').rstrip('\x00')
+        password_masked = resp["data"][32:96].decode('utf-8').rstrip('\x00')
+
+        return {
+            "ssid": ssid,
+            "password": password_masked  # マスク表示（例: "abc***"）
+        }
+
     async def disconnect(self):
         """切断"""
         if self.client:
@@ -568,6 +651,18 @@ async def main():
         # プロファイル取得
         profile = await monitor.get_plant_profile()
         print(f"Current Profile: {profile['plant_name']}")
+
+        # WiFi設定
+        await monitor.set_wifi_config(
+            ssid="MyWiFiNetwork",
+            password="MyPassword123"
+        )
+        print("WiFi config updated!")
+
+        # WiFi設定取得
+        wifi_config = await monitor.get_wifi_config()
+        print(f"Current WiFi SSID: {wifi_config['ssid']}")
+        print(f"Password (masked): {wifi_config['password']}")
 
     finally:
         await monitor.disconnect()
