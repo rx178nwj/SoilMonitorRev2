@@ -66,6 +66,7 @@ typedef struct __attribute__((packed)) {
     uint32_t heap_free;         // 空きヒープ（バイト）
     uint32_t heap_min;          // 最小空きヒープ（バイト）
     uint32_t task_count;        // タスク数
+    uint32_t current_time;      // 現在時刻（UNIXタイムスタンプ、0の場合は時刻未設定）
     uint8_t wifi_connected;     // WiFi接続状態（0:未接続, 1:接続済み）
     uint8_t ble_connected;      // BLE接続状態（0:未接続, 1:接続済み）
     uint8_t padding[2];         // アライメント用パディング

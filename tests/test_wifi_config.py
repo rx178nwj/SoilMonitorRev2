@@ -180,13 +180,21 @@ class PlantMonitorWiFiTester:
             return None
 
         # システムステータスをパース（system_status_t構造体）
-        # struct: uptime(4), heap_free(4), heap_min(4), task_count(4), wifi_connected(1), ble_connected(1), padding(2)
-        if len(resp["data"]) >= 20:
-            uptime, heap_free, heap_min, task_count, wifi_connected, ble_connected = \
-                struct.unpack('<IIIIBBxx', resp["data"][:20])
+        # struct: uptime(4), heap_free(4), heap_min(4), task_count(4), current_time(4), wifi_connected(1), ble_connected(1), padding(2)
+        if len(resp["data"]) >= 24:
+            uptime, heap_free, heap_min, task_count, current_time, wifi_connected, ble_connected = \
+                struct.unpack('<IIIIIBBxx', resp["data"][:24])
+
+            # UNIXタイムスタンプを日時に変換
+            from datetime import datetime
+            if current_time > 0:
+                device_time = datetime.fromtimestamp(current_time).strftime('%Y-%m-%d %H:%M:%S')
+            else:
+                device_time = "Not set"
 
             print(f"✅ System Status:")
             print(f"   Uptime: {uptime} seconds")
+            print(f"   Device time: {device_time}")
             print(f"   Free heap: {heap_free} bytes")
             print(f"   Min heap: {heap_min} bytes")
             print(f"   Task count: {task_count}")
@@ -195,6 +203,8 @@ class PlantMonitorWiFiTester:
 
             return {
                 "uptime": uptime,
+                "current_time": current_time,
+                "device_time": device_time,
                 "heap_free": heap_free,
                 "heap_min": heap_min,
                 "task_count": task_count,

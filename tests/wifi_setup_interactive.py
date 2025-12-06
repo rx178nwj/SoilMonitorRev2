@@ -169,13 +169,21 @@ class WiFiSetup:
 
         resp = await self.send_command(CMD_GET_SYSTEM_STATUS)
 
-        if resp["status"] == RESP_STATUS_SUCCESS and len(resp["data"]) >= 20:
-            # system_status_t: uptime(4), heap_free(4), heap_min(4), task_count(4), wifi_connected(1), ble_connected(1), padding(2)
-            uptime, heap_free, heap_min, task_count, wifi_connected, ble_connected = \
-                struct.unpack('<IIIIBBxx', resp["data"][:20])
+        if resp["status"] == RESP_STATUS_SUCCESS and len(resp["data"]) >= 24:
+            # system_status_t: uptime(4), heap_free(4), heap_min(4), task_count(4), current_time(4), wifi_connected(1), ble_connected(1), padding(2)
+            uptime, heap_free, heap_min, task_count, current_time, wifi_connected, ble_connected = \
+                struct.unpack('<IIIIIBBxx', resp["data"][:24])
+
+            # UNIXタイムスタンプを日時に変換
+            from datetime import datetime
+            if current_time > 0:
+                device_time = datetime.fromtimestamp(current_time).strftime('%Y-%m-%d %H:%M:%S')
+            else:
+                device_time = "未設定"
 
             print(f"\nシステムステータス:")
             print(f"  稼働時間: {uptime}秒 ({uptime//3600}時間{(uptime%3600)//60}分)")
+            print(f"  デバイス時刻: {device_time}")
             print(f"  空きメモリ: {heap_free:,}バイト")
             print(f"  最小空きメモリ: {heap_min:,}バイト")
             print(f"  タスク数: {task_count}")

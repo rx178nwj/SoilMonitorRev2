@@ -225,7 +225,7 @@ data: (なし)
 
 **レスポンス**
 
-`system_status_t`構造体（20バイト）が返されます：
+`system_status_t`構造体（24バイト）が返されます：
 
 | フィールド | 型 | サイズ | 説明 |
 |-----------|-----|--------|------|
@@ -233,14 +233,22 @@ data: (なし)
 | heap_free | uint32_t | 4 | 空きヒープメモリ（バイト） |
 | heap_min | uint32_t | 4 | 最小空きヒープメモリ（バイト） |
 | task_count | uint32_t | 4 | 実行中のタスク数 |
+| current_time | uint32_t | 4 | 現在時刻（UNIXタイムスタンプ、0の場合は未設定） |
 | wifi_connected | uint8_t | 1 | WiFi接続状態（0:未接続, 1:接続済み） |
 | ble_connected | uint8_t | 1 | BLE接続状態（0:未接続, 1:接続済み） |
 | padding | uint8_t[2] | 2 | アライメント用パディング |
 
 **Pythonでのパース例:**
 ```python
-uptime, heap_free, heap_min, task_count, wifi_connected, ble_connected = \
-    struct.unpack('<IIIIBBxx', response_data[:20])
+uptime, heap_free, heap_min, task_count, current_time, wifi_connected, ble_connected = \
+    struct.unpack('<IIIIIBBxx', response_data[:24])
+
+# 時刻を日時に変換
+from datetime import datetime
+if current_time > 0:
+    device_time = datetime.fromtimestamp(current_time).strftime('%Y-%m-%d %H:%M:%S')
+else:
+    device_time = "未設定"
 ```
 
 ---

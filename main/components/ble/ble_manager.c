@@ -402,6 +402,12 @@ static esp_err_t handle_get_system_status(uint8_t sequence_num, uint8_t *respons
     status.heap_free = (uint32_t)heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
     status.heap_min = (uint32_t)heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL);
     status.task_count = (uint32_t)uxTaskGetNumberOfTasks();
+
+    // 現在時刻を取得（UNIXタイムスタンプ）
+    time_t now;
+    time(&now);
+    status.current_time = (uint32_t)now;
+
     status.wifi_connected = wifi_manager_is_connected() ? 1 : 0;
     status.ble_connected = (g_conn_handle != BLE_HS_CONN_HANDLE_NONE) ? 1 : 0;
 
