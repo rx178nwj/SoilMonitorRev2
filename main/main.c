@@ -376,6 +376,7 @@ void app_main(void) {
     ESP_LOGI(TAG, "WiFi機能を初期化中（BLE経由で設定可能）");
     // WiFi管理システムの初期化のみ（自動接続はしない）
     ESP_ERROR_CHECK(wifi_manager_init(wifi_status_callback));
+    ESP_ERROR_CHECK(time_sync_manager_init(time_sync_callback));
     // 注意: wifi_manager_start()はBLE経由で呼び出されます（CMD_WIFI_CONNECT）
 
     xTaskCreate(sensor_read_task, "sensor_read", 4096, NULL, 5, &g_sensor_task_handle);
