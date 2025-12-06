@@ -136,28 +136,35 @@ esp_err_t wifi_manager_init(wifi_status_callback_t callback)
         return ret;
     }
     
-    // WiFi設定
-    //wifi_config_t wifi_config = {0};
-    //strncpy((char*)wifi_config.sta.ssid, WIFI_SSID, sizeof(wifi_config.sta.ssid) - 1);
-    //strncpy((char*)wifi_config.sta.password, WIFI_PASSWORD, sizeof(wifi_config.sta.password) - 1);
-    g_wifi_config.sta.threshold.authmode = WIFI_AUTH_WPA2_PSK;
-    
+    // WiFiモード設定
     ret = esp_wifi_set_mode(WIFI_MODE_STA);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "WiFiモード設定失敗: %s", esp_err_to_name(ret));
         return ret;
     }
-    
-    ret = esp_wifi_set_config(WIFI_IF_STA, &g_wifi_config);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "WiFi設定失敗: %s", esp_err_to_name(ret));
-        return ret;
+
+    // デフォルトのWiFi設定（wifi_credentials.hから読み込み）
+    // BLE経由で設定する場合は、この設定は上書きされます
+    if (strlen(WIFI_SSID) > 0) {
+        strncpy((char*)g_wifi_config.sta.ssid, WIFI_SSID, sizeof(g_wifi_config.sta.ssid) - 1);
+        strncpy((char*)g_wifi_config.sta.password, WIFI_PASSWORD, sizeof(g_wifi_config.sta.password) - 1);
+        g_wifi_config.sta.threshold.authmode = WIFI_AUTH_WPA2_PSK;
+
+        ret = esp_wifi_set_config(WIFI_IF_STA, &g_wifi_config);
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "WiFi設定失敗: %s", esp_err_to_name(ret));
+            return ret;
+        }
+        ESP_LOGI(TAG, "✅ WiFi管理システム初期化完了 - デフォルトSSID: %s", WIFI_SSID);
+    } else {
+        // SSIDが空の場合、BLE経由での設定を待つ
+        g_wifi_config.sta.threshold.authmode = WIFI_AUTH_WPA2_PSK;
+        ESP_LOGI(TAG, "✅ WiFi管理システム初期化完了 - SSID未設定（BLE経由で設定してください）");
     }
-    
+
     // コールバック設定
     g_wifi_manager.status_callback = callback;
-    
-    ESP_LOGI(TAG, "✅ WiFi管理システム初期化完了 - SSID: %s", WIFI_SSID);
+
     return ESP_OK;
 }
 

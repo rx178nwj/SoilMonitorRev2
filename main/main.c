@@ -373,17 +373,10 @@ void app_main(void) {
     ESP_LOGI(TAG, "✅ Power management configured (auto light-sleep with BLE modem-sleep)");
 #endif
 
-#if 0
-    ESP_LOGI(TAG, "WiFi機能が有効化されています");
-    // WiFiと時刻同期の初期化
+    ESP_LOGI(TAG, "WiFi機能を初期化中（BLE経由で設定可能）");
+    // WiFi管理システムの初期化のみ（自動接続はしない）
     ESP_ERROR_CHECK(wifi_manager_init(wifi_status_callback));
-    ESP_ERROR_CHECK(time_sync_manager_init(time_sync_callback));
-
-    // WiFi接続開始
-        network_init();
-#else
-    ESP_LOGI(TAG, "WiFi機能は無効化されています");
-#endif
+    // 注意: wifi_manager_start()はBLE経由で呼び出されます（CMD_WIFI_CONNECT）
 
     xTaskCreate(sensor_read_task, "sensor_read", 4096, NULL, 5, &g_sensor_task_handle);
     xTaskCreate(status_analysis_task, "analysis_task", 6144, NULL, 4, &g_analysis_task_handle);
