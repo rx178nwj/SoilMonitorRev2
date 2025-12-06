@@ -285,26 +285,37 @@ async def main():
         connect_now = input("\n今すぐWiFi接続を開始しますか? (y/n): ").lower()
         if connect_now == 'y':
             if await setup.connect_wifi():
-                print("\n⏳ 接続処理中... 5秒待機します")
-                await asyncio.sleep(5)
+                print("\n⏳ WiFi接続を開始しました。接続状態を確認します...")
 
-                # ステータス確認
-                wifi_connected = await setup.check_status()
+                # 初期待機
+                await asyncio.sleep(10)
 
-                if wifi_connected:
-                    print("\n" + "="*60)
-                    print("🎉 WiFi接続に成功しました!")
-                    print("="*60)
-                    return 0
-                else:
-                    print("\n" + "="*60)
-                    print("⚠️  WiFi接続が確認できません")
-                    print("="*60)
-                    print("\n考えられる原因:")
-                    print("  - SSIDまたはパスワードが間違っている")
-                    print("  - WiFiルーターが範囲外")
-                    print("  - 接続に時間がかかっている（もう少し待ってみてください）")
-                    return 1
+                # 最大5回、5秒間隔でステータスをチェック
+                max_retries = 5
+                for retry in range(max_retries):
+                    print(f"\n📊 接続確認 ({retry + 1}/{max_retries})...")
+                    wifi_connected = await setup.check_status()
+
+                    if wifi_connected:
+                        print("\n" + "="*60)
+                        print("🎉 WiFi接続に成功しました!")
+                        print("="*60)
+                        return 0
+
+                    if retry < max_retries - 1:
+                        print("⏳ 接続を待機中... 5秒後に再確認します")
+                        await asyncio.sleep(5)
+
+                # 5回チェックしても接続できなかった場合
+                print("\n" + "="*60)
+                print("⚠️  WiFi接続が確認できませんでした")
+                print("="*60)
+                print("\n考えられる原因:")
+                print("  - SSIDまたはパスワードが間違っている")
+                print("  - WiFiルーターが範囲外")
+                print("  - WiFiルーターが2.4GHzではない（ESP32-C6は5GHz非対応）")
+                print("  - WiFiルーターの暗号化方式が非対応")
+                return 1
         else:
             print("\n✅ 設定は完了しました")
             print("   デバイス再起動時または手動接続時にWiFiに接続されます")

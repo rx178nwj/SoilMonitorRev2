@@ -286,20 +286,48 @@ Examples:
                 success = await tester.wifi_connect()
 
                 if success:
-                    print("\n⏳ Waiting 5 seconds for WiFi connection to establish...")
-                    await asyncio.sleep(5)
+                    print("\n⏳ WiFi connection started. Checking connection status...")
 
-        # システムステータスをチェック
-        if args.check_status or not args.no_connect:
+                    # 初期待機
+                    await asyncio.sleep(10)
+
+                    # 最大5回、5秒間隔でステータスをチェック
+                    max_retries = 5
+                    wifi_connected = False
+
+                    for retry in range(max_retries):
+                        print(f"\n📊 Checking connection status ({retry + 1}/{max_retries})...")
+                        status = await tester.get_system_status()
+
+                        if status and status.get('wifi_connected'):
+                            wifi_connected = True
+                            break
+
+                        if retry < max_retries - 1:
+                            print("⏳ Waiting for connection... Rechecking in 5 seconds")
+                            await asyncio.sleep(5)
+
+                    if wifi_connected:
+                        print("\n🎉 SUCCESS: Device is connected to WiFi!")
+                        return 0
+                    else:
+                        print("\n⚠️  WARNING: Device is not connected to WiFi")
+                        print("   Possible causes:")
+                        print("   - Incorrect SSID or password")
+                        print("   - WiFi router out of range")
+                        print("   - Router is 5GHz (ESP32-C6 only supports 2.4GHz)")
+                        return 1
+
+        # システムステータスをチェック（--check-statusオプション使用時）
+        if args.check_status and args.no_connect:
             await asyncio.sleep(0.5)
             status = await tester.get_system_status()
 
             if status and status.get('wifi_connected'):
-                print("\n🎉 SUCCESS: Device is connected to WiFi!")
+                print("\n✅ Device is connected to WiFi")
                 return 0
-            elif status and not args.get_only:
-                print("\n⚠️  WARNING: Device is not yet connected to WiFi")
-                print("   This may take additional time or credentials may be incorrect")
+            else:
+                print("\n❌ Device is not connected to WiFi")
                 return 1
 
         return 0
