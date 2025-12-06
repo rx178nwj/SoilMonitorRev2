@@ -70,6 +70,7 @@ static esp_err_t handle_get_wifi_config(uint8_t sequence_num, uint8_t *response_
 static esp_err_t handle_wifi_connect(uint8_t sequence_num, uint8_t *response_buffer, size_t *response_length);
 static esp_err_t handle_get_timezone(uint8_t sequence_num, uint8_t *response_buffer, size_t *response_length);
 static esp_err_t handle_sync_time(uint8_t sequence_num, uint8_t *response_buffer, size_t *response_length);
+static esp_err_t handle_wifi_disconnect(uint8_t sequence_num, uint8_t *response_buffer, size_t *response_length);
 static esp_err_t find_data_by_time(const struct tm *target_time, time_data_response_t *result);
 static esp_err_t send_response_notification(const uint8_t *response_data, size_t response_length);
 
@@ -352,6 +353,9 @@ static esp_err_t process_ble_command(const ble_command_packet_t *cmd_packet,
         case CMD_SYNC_TIME:
             err = handle_sync_time(cmd_packet->sequence_num, response_buffer, response_length);
             break;
+        case CMD_WIFI_DISCONNECT:
+            err = handle_wifi_disconnect(cmd_packet->sequence_num, response_buffer, response_length);
+            break;
         default: {
             ble_response_packet_t *resp = (ble_response_packet_t *)response_buffer;
             resp->response_id = cmd_packet->command_id;
@@ -627,6 +631,29 @@ static esp_err_t handle_sync_time(uint8_t sequence_num, uint8_t *response_buffer
     } else {
         resp->status_code = RESP_STATUS_ERROR;
         ESP_LOGE(TAG, "Failed to trigger time synchronization: %s", esp_err_to_name(sync_err));
+    }
+
+    *response_length = sizeof(ble_response_packet_t);
+    return ESP_OK;
+}
+
+static esp_err_t handle_wifi_disconnect(uint8_t sequence_num, uint8_t *response_buffer, size_t *response_length)
+{
+    ble_response_packet_t *resp = (ble_response_packet_t *)response_buffer;
+    resp->response_id = CMD_WIFI_DISCONNECT;
+    resp->sequence_num = sequence_num;
+    resp->data_length = 0;
+
+    ESP_LOGI(TAG, "CMD_WIFI_DISCONNECT received. Triggering WiFi disconnection.");
+
+    esp_err_t disconnect_err = wifi_manager_stop();
+
+    if (disconnect_err == ESP_OK) {
+        resp->status_code = RESP_STATUS_SUCCESS;
+        ESP_LOGI(TAG, "WiFi disconnection successfully triggered.");
+    } else {
+        resp->status_code = RESP_STATUS_ERROR;
+        ESP_LOGE(TAG, "Failed to trigger WiFi disconnection: %s", esp_err_to_name(disconnect_err));
     }
 
     *response_length = sizeof(ble_response_packet_t);
@@ -953,6 +980,7 @@ void print_ble_system_info(void)
     ESP_LOGI(TAG, "  - 0x0F: WiFi Connect");
     ESP_LOGI(TAG, "  - 0x10: Get Timezone");
     ESP_LOGI(TAG, "  - 0x11: Sync Internet Time");
+    ESP_LOGI(TAG, "  - 0x12: WiFi Disconnect");
     ESP_LOGI(TAG, "📡 BLE Characteristics:");
     ESP_LOGI(TAG, "  - Command: Write commands to device");
     ESP_LOGI(TAG, "  - Response: Read/Notify for command responses");

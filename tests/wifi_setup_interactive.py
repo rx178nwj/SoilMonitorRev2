@@ -27,6 +27,7 @@ CMD_WIFI_CONNECT = 0x0F
 CMD_GET_SYSTEM_STATUS = 0x02
 CMD_GET_TIMEZONE = 0x10
 CMD_SYNC_TIME = 0x11
+CMD_WIFI_DISCONNECT = 0x12
 
 # Response Status
 RESP_STATUS_SUCCESS = 0x00
@@ -227,6 +228,21 @@ class WiFiSetup:
             print("❌ 時刻同期コマンドの送信に失敗しました")
             return False
 
+    async def wifi_disconnect(self):
+        """WiFi切断"""
+        print(f"\n" + "="*60)
+        print("📡 WiFi切断を開始します...")
+        print("="*60)
+
+        resp = await self.send_command(CMD_WIFI_DISCONNECT)
+
+        if resp["status"] == RESP_STATUS_SUCCESS:
+            print("✅ WiFi切断コマンドを送信しました")
+            return True
+        else:
+            print("❌ WiFi切断コマンドの送信に失敗しました")
+            return False
+
     async def disconnect(self):
         """切断"""
         if self.client and self.client.is_connected:
@@ -346,6 +362,15 @@ async def main():
                             await asyncio.sleep(10)
                             print("\n再度ステータスを確認し、時刻が同期されたか確認します。")
                             await setup.check_status()
+
+                        # WiFi切断テスト
+                        disconnect_now = input("\nWiFi切断テストを実行しますか? (y/n): ").lower()
+                        if disconnect_now == 'y':
+                            if await setup.wifi_disconnect():
+                                print("\n⏳ WiFi切断が完了するまで3秒待機します...")
+                                await asyncio.sleep(3)
+                                print("\n再度ステータスを確認し、切断されたか確認します。")
+                                await setup.check_status()
 
                         print("\n" + "="*60)
                         print("✅ すべての処理が完了しました")
