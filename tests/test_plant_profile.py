@@ -30,44 +30,62 @@ RESP_STATUS_SUCCESS = 0x00
 RESP_STATUS_ERROR = 0x01
 
 class PlantMonitorTester:
-    def __init__(self, device_name_prefix="PlantMonitor"):
-        self.device_name_prefix = device_name_prefix
+    def __init__(self):
         self.client = None
         self.response_data = None
         self.sequence_num = 0
 
-    async def find_device(self, timeout=10.0):
+    async def find_device():
         """デバイスを検索"""
-        print(f"🔍 Scanning for devices with name starting with '{self.device_name_prefix}'...")
+        print("\n" + "="*60)
+        print("🔍 PlantMonitorデバイスを検索中...")
+        print("="*60)
 
-        devices = await BleakScanner.discover(timeout=timeout)
+        devices = await BleakScanner.discover(timeout=10.0)
+        plant_monitors = []
 
         for device in devices:
-            if device.name and device.name.startswith(self.device_name_prefix):
-                print(f"✅ Found device: {device.name} ({device.address})")
-                return device.address
+            if device.name and device.name.startswith("PlantMonitor"):
+                plant_monitors.append(device)
 
-        print(f"❌ No device found with prefix '{self.device_name_prefix}'")
-        return None
+        if not plant_monitors:
+            print("❌ PlantMonitorデバイスが見つかりません")
+            return None
+
+        if len(plant_monitors) == 1:
+            device = plant_monitors[0]
+            print(f"\n✅ デバイスを発見: {device.name}")
+            print(f"   アドレス: {device.address}")
+            return device.address
+
+        # 複数のデバイスがある場合、選択させる
+        print(f"\n複数のデバイスが見つかりました:")
+        for i, device in enumerate(plant_monitors, 1):
+            print(f"  {i}. {device.name} ({device.address})")
+
+        while True:
+            try:
+                choice = input(f"\n接続するデバイスを選択 (1-{len(plant_monitors)}): ")
+                idx = int(choice) - 1
+                if 0 <= idx < len(plant_monitors):
+                    return plant_monitors[idx].address
+            except (ValueError, IndexError):
+                pass
+            print("❌ 無効な選択です")
 
     def response_handler(self, sender, data):
         """レスポンス通知ハンドラ"""
         self.response_data = bytes(data)
 
-    async def connect(self, address=None):
+    async def connect(self, address):
         """デバイスに接続"""
-        if address is None:
-            address = await self.find_device()
-            if address is None:
-                raise Exception("Device not found")
-
-        print(f"🔗 Connecting to {address}...")
+        print(f"🔗 接続中...")
         self.client = BleakClient(address)
         await self.client.connect()
 
         # レスポンス通知を有効化
         await self.client.start_notify(RESPONSE_UUID, self.response_handler)
-        print(f"✅ Connected to {address}")
+        print(f"✅ 接続完了")
 
     async def send_command(self, command_id, data=b'')
         """コマンド送信とレスポンス受信"""
@@ -168,35 +186,35 @@ class PlantMonitorTester:
 
 
 async def main():
-    parser = argparse.ArgumentParser(
-        description='Plant Profile Test for PlantMonitor ESP32-C6',
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog=    """
-Example:
-  # デバイスを自動で探してテスト実行
-  python3 test_plant_profile.py
-
-  # 特定のデバイスに接続してテスト実行
-  python3 test_plant_profile.py --address "AA:BB:CC:DD:EE:FF"
-        """
-    )
-
-    parser.add_argument('--address', type=str, help='Device BLE address (if known)')
-    parser.add_argument('--device-name', type=str, default='PlantMonitor',
-                       help='Device name prefix (default: PlantMonitor)')
-    args = parser.parse_args()
-
-    tester = PlantMonitorTester(device_name_prefix=args.device_name)
+    print("""
+╔══════════════════════════════════════════════════════════════╗
+║                                                              ║
+║     PlantMonitor Plant Profile Test Tool                     ║
+║                                                              ║
+╚══════════════════════════════════════════════════════════════╝
+    """)
+    tester = PlantMonitorTester()
 
     try:
+        # デバイス検索
+        address = await tester.find_device()
+        if not address:
+            return 1
+
         # 接続
-        await tester.connect(address=args.address)
+        await tester.connect(address=address)
 
         # 植物プロファイルを取得
         await tester.get_plant_profile()
 
+        print("\n" + "="*60)
+        print("✅ すべての処理が完了しました")
+        print("="*60)
         return 0
 
+    except KeyboardInterrupt:
+        print("\n\n❌ ユーザーによって中断されました")
+        return 1
     except Exception as e:
         print(f"\n❌ Error: {e}")
         import traceback
@@ -205,8 +223,4 @@ Example:
 
     finally:
         await tester.disconnect()
-
-
-if __name__ == "__main__":
-    exit_code = asyncio.run(main())
-    sys.exit(exit_code)
+        print("\n👋 終了しました\n")
