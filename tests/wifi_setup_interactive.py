@@ -29,6 +29,8 @@ CMD_GET_TIMEZONE = 0x10
 CMD_SYNC_TIME = 0x11
 CMD_WIFI_DISCONNECT = 0x12
 CMD_SAVE_WIFI_CONFIG = 0x13
+CMD_SET_TIMEZONE = 0x15
+CMD_SAVE_TIMEZONE = 0x16
 
 # Response Status
 RESP_STATUS_SUCCESS = 0x00
@@ -260,6 +262,46 @@ class WiFiSetup:
             print("❌ WiFi設定の保存に失敗しました")
             return False
 
+    async def set_timezone(self, timezone):
+        """タイムゾーン設定"""
+        print(f"\n" + "="*60)
+        print(f"🌏 タイムゾーンを '{timezone}' に設定します...")
+        print("="*60)
+
+        # タイムゾーン文字列をバイト列に変換（NULL終端）
+        timezone_bytes = timezone.encode('utf-8')
+        if len(timezone_bytes) > 63:
+            print("❌ タイムゾーン文字列が長すぎます（最大63文字）")
+            return False
+
+        # NULL終端を追加
+        data = timezone_bytes + b'\x00'
+
+        resp = await self.send_command(CMD_SET_TIMEZONE, data)
+
+        if resp["status"] == RESP_STATUS_SUCCESS:
+            print(f"✅ タイムゾーンを設定しました: {timezone}")
+            return True
+        else:
+            print("❌ タイムゾーンの設定に失敗しました")
+            return False
+
+    async def save_timezone(self):
+        """タイムゾーン設定をNVSに保存"""
+        print(f"\n" + "="*60)
+        print("💾 タイムゾーン設定をNVSに保存します...")
+        print("="*60)
+
+        resp = await self.send_command(CMD_SAVE_TIMEZONE)
+
+        if resp["status"] == RESP_STATUS_SUCCESS:
+            print("✅ タイムゾーン設定をNVSに保存しました")
+            print("   デバイス再起動後もこの設定が保持されます")
+            return True
+        else:
+            print("❌ タイムゾーン設定の保存に失敗しました")
+            return False
+
     async def disconnect(self):
         """切断"""
         if self.client and self.client.is_connected:
@@ -384,6 +426,25 @@ async def main():
                             await asyncio.sleep(10)
                             print("\n再度ステータスを確認し、時刻が同期されたか確認します。")
                             await setup.check_status()
+
+                        # タイムゾーン設定
+                        set_tz = input("\nタイムゾーンを変更しますか? (y/n): ").lower()
+                        if set_tz == 'y':
+                            print("\nタイムゾーン設定例:")
+                            print("  日本標準時: JST-9")
+                            print("  米国東部時間: EST5EDT,M3.2.0,M11.1.0")
+                            print("  協定世界時: UTC0")
+                            print("  中国標準時: CST-8")
+                            new_tz = input("\n新しいタイムゾーンを入力 (POSIX形式): ").strip()
+                            if new_tz:
+                                if await setup.set_timezone(new_tz):
+                                    # タイムゾーン設定をNVSに保存
+                                    save_tz = input("\nタイムゾーン設定をNVSに保存しますか? (y/n): ").lower()
+                                    if save_tz == 'y':
+                                        await setup.save_timezone()
+
+                                    # 変更を確認
+                                    await setup.get_timezone()
 
                         # WiFi切断テスト
                         disconnect_now = input("\nWiFi切断テストを実行しますか? (y/n): ").lower()

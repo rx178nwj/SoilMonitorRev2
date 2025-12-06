@@ -189,6 +189,8 @@ struct ble_response_packet {
 | 0x12 | CMD_WIFI_DISCONNECT | WiFi切断 | 0 |
 | 0x13 | CMD_SAVE_WIFI_CONFIG | WiFi設定のNVS保存 | 0 |
 | 0x14 | CMD_SAVE_PLANT_PROFILE | 植物プロファイルのNVS保存 | 0 |
+| 0x15 | CMD_SET_TIMEZONE | タイムゾーン設定 | 可変 |
+| 0x16 | CMD_SAVE_TIMEZONE | タイムゾーン設定のNVS保存 | 0 |
 
 ---
 
@@ -674,6 +676,90 @@ data: (なし)
 
 ---
 
+### 0x15: CMD_SET_TIMEZONE - タイムゾーン設定
+
+デバイスのタイムゾーンを動的に設定します。
+
+**コマンド**
+```
+command_id: 0x15
+sequence_num: <任意>
+data_length: <タイムゾーン文字列の長さ + NULL終端（最大64バイト）>
+data: タイムゾーン文字列（NULL終端、POSIX形式）
+```
+
+**レスポンス**
+```
+response_id: 0x15
+status_code: 0x00 (成功) / 0x03 (無効なパラメータ)
+sequence_num: <対応するシーケンス番号>
+data_length: 0x0000
+data: (なし)
+```
+
+**タイムゾーン形式**:
+POSIXタイムゾーン形式の文字列を使用します。
+
+**主要なタイムゾーン例**:
+- 日本標準時: `JST-9`
+- 協定世界時: `UTC0`
+- 中国標準時: `CST-8`
+- 米国東部時間: `EST5EDT,M3.2.0,M11.1.0`
+- 米国太平洋時間: `PST8PDT,M3.2.0,M11.1.0`
+- 欧州中央時間: `CET-1CEST,M3.5.0,M10.5.0/3`
+
+**注意事項**:
+- タイムゾーン文字列は最大63文字（NULL終端を含めて64バイト）
+- 設定は即座に適用され、システム時刻の表示に反映されます
+- NVSに保存するには別途`CMD_SAVE_TIMEZONE`を実行してください
+- 無効なタイムゾーン形式の場合、ステータスコード0x03が返されます
+
+**Pythonでの使用例**:
+```python
+# タイムゾーンを日本標準時に設定
+timezone = "JST-9"
+timezone_bytes = timezone.encode('utf-8') + b'\x00'
+resp = await send_command(CMD_SET_TIMEZONE, timezone_bytes)
+if resp["status"] == RESP_STATUS_SUCCESS:
+    print(f"Timezone set to: {timezone}")
+```
+
+---
+
+### 0x16: CMD_SAVE_TIMEZONE - タイムゾーン設定のNVS保存
+
+現在設定されているタイムゾーン設定をNVS（不揮発性ストレージ）に保存します。
+
+**コマンド**
+```
+command_id: 0x16
+sequence_num: <任意>
+data_length: 0x0000
+data: (なし)
+```
+
+**レスポンス**
+```
+response_id: 0x16
+status_code: 0x00 (成功) / 0x01 (エラー)
+sequence_num: <対応するシーケンス番号>
+data_length: 0x0000
+data: (なし)
+```
+
+**注意事項**:
+- 事前に`CMD_SET_TIMEZONE`でタイムゾーンを設定する必要があります
+- NVSに保存された設定は、デバイス再起動後も保持されます
+- タイムゾーンが初期化されていない場合、デフォルト値（JST-9）が保存されます
+
+**推奨フロー**:
+1. `CMD_GET_TIMEZONE`で現在のタイムゾーンを確認
+2. `CMD_SET_TIMEZONE`で新しいタイムゾーンを設定
+3. `CMD_GET_TIMEZONE`で設定内容を確認
+4. 正しく設定されていれば`CMD_SAVE_TIMEZONE`でNVSに保存
+
+---
+
 ## 通信例
 
 ### Python実装例（bleak使用）
@@ -899,6 +985,30 @@ class PlantMonitor:
 
         return True
 
+    async def set_timezone(self, timezone):
+        """タイムゾーン設定"""
+        # タイムゾーン文字列をNULL終端バイト列に変換
+        timezone_bytes = timezone.encode('utf-8')
+        if len(timezone_bytes) > 63:
+            raise ValueError("Timezone string too long (max 63 bytes)")
+
+        data = timezone_bytes + b'\x00'
+        resp = await self.send_command(0x15, data)
+
+        if resp["status"] != 0x00:
+            raise Exception(f"Failed to set timezone: status {resp['status']}")
+
+        return True
+
+    async def save_timezone(self):
+        """タイムゾーン設定をNVSに保存"""
+        resp = await self.send_command(0x16)
+
+        if resp["status"] != 0x00:
+            raise Exception(f"Failed to save timezone: status {resp['status']}")
+
+        return True
+
     async def disconnect(self):
         """切断"""
         if self.client:
@@ -970,6 +1080,14 @@ async def main():
         # 植物プロファイルをNVSに保存
         await monitor.save_plant_profile()
         print("Plant profile saved to NVS!")
+
+        # タイムゾーンを変更
+        await monitor.set_timezone("JST-9")
+        print("Timezone changed to JST-9!")
+
+        # タイムゾーン設定をNVSに保存
+        await monitor.save_timezone()
+        print("Timezone saved to NVS!")
 
     finally:
         await monitor.disconnect()
