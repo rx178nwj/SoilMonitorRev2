@@ -222,10 +222,13 @@ async def main():
         print("🔧 WiFi設定の入力")
         print("="*60)
 
+        use_existing_config = False
         if current_ssid:
             use_current = input(f"\n現在のSSID '{current_ssid}' を使用しますか? (y/n): ").lower()
             if use_current == 'y':
                 ssid = current_ssid
+                use_existing_config = True
+                print("✅ 現在のSSIDとパスワードをそのまま使用します")
             else:
                 ssid = input("\n新しいSSIDを入力: ").strip()
         else:
@@ -235,32 +238,40 @@ async def main():
             print("❌ SSIDが空です")
             return 1
 
-        password = input("パスワードを入力: ").strip()
+        # 既存の設定を使用しない場合のみパスワード入力
+        if not use_existing_config:
+            password = input("パスワードを入力: ").strip()
 
-        if not password:
-            print("❌ パスワードが空です")
-            return 1
+            if not password:
+                print("❌ パスワードが空です")
+                return 1
 
-        # 確認
-        print(f"\n" + "="*60)
-        print("📝 設定確認")
-        print("="*60)
-        print(f"  SSID: {ssid}")
-        print(f"  Password: {'*' * len(password)}")
+            # 確認
+            print(f"\n" + "="*60)
+            print("📝 設定確認")
+            print("="*60)
+            print(f"  SSID: {ssid}")
+            print(f"  Password: {'*' * len(password)}")
 
-        confirm = input("\nこの設定でよろしいですか? (y/n): ").lower()
-        if confirm != 'y':
-            print("❌ キャンセルしました")
-            return 1
+            confirm = input("\nこの設定でよろしいですか? (y/n): ").lower()
+            if confirm != 'y':
+                print("❌ キャンセルしました")
+                return 1
+        else:
+            # 既存の設定を使用する場合は確認をスキップ
+            password = None  # パスワードは既存のものを使用（設定送信をスキップ）
 
-        # WiFi設定を送信
-        if not await setup.set_wifi_config(ssid, password):
-            return 1
+        # WiFi設定を送信（新しい設定の場合のみ）
+        if password is not None:
+            if not await setup.set_wifi_config(ssid, password):
+                return 1
 
-        await asyncio.sleep(0.5)
+            await asyncio.sleep(0.5)
 
-        # 設定確認
-        await setup.get_current_config()
+            # 設定確認
+            await setup.get_current_config()
+        else:
+            print("\n✅ 既存のWiFi設定を使用します（設定送信をスキップ）")
 
         # WiFi接続
         connect_now = input("\n今すぐWiFi接続を開始しますか? (y/n): ").lower()
