@@ -225,12 +225,23 @@ data: (なし)
 
 **レスポンス**
 
-ASCII文字列で以下のフォーマット：
-```
-Uptime: <秒数> s, Free Heap: <バイト数>, Min Free: <バイト数>
-```
+`system_status_t`構造体（20バイト）が返されます：
 
-例：`Uptime: 3600 s, Free Heap: 245678, Min Free: 230000`
+| フィールド | 型 | サイズ | 説明 |
+|-----------|-----|--------|------|
+| uptime_seconds | uint32_t | 4 | 稼働時間（秒） |
+| heap_free | uint32_t | 4 | 空きヒープメモリ（バイト） |
+| heap_min | uint32_t | 4 | 最小空きヒープメモリ（バイト） |
+| task_count | uint32_t | 4 | 実行中のタスク数 |
+| wifi_connected | uint8_t | 1 | WiFi接続状態（0:未接続, 1:接続済み） |
+| ble_connected | uint8_t | 1 | BLE接続状態（0:未接続, 1:接続済み） |
+| padding | uint8_t[2] | 2 | アライメント用パディング |
+
+**Pythonでのパース例:**
+```python
+uptime, heap_free, heap_min, task_count, wifi_connected, ble_connected = \
+    struct.unpack('<IIIIBBxx', response_data[:20])
+```
 
 ---
 
