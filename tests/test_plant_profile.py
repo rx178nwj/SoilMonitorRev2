@@ -35,7 +35,7 @@ class PlantMonitorTester:
         self.response_data = None
         self.sequence_num = 0
 
-    async def find_device():
+    async def find_device(self):
         """デバイスを検索"""
         print("\n" + "="*60)
         print("🔍 PlantMonitorデバイスを検索中...")
@@ -87,7 +87,7 @@ class PlantMonitorTester:
         await self.client.start_notify(RESPONSE_UUID, self.response_handler)
         print(f"✅ 接続完了")
 
-    async def send_command(self, command_id, data=b'')
+    async def send_command(self, command_id, data=b''):
         """コマンド送信とレスポンス受信"""
         self.sequence_num = (self.sequence_num + 1) % 256
 
