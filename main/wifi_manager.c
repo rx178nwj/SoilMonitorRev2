@@ -4,6 +4,7 @@
 #include "freertos/task.h"
 #include "freertos/event_groups.h"
 #include "nvs_flash.h"
+#include "nvs_config.h"
 #include <string.h>
 
 static const char *TAG = "WIFI_MGR";
@@ -143,23 +144,38 @@ esp_err_t wifi_manager_init(wifi_status_callback_t callback)
         return ret;
     }
 
-    // デフォルトのWiFi設定（wifi_credentials.hから読み込み）
-    // BLE経由で設定する場合は、この設定は上書きされます
-    if (strlen(WIFI_SSID) > 0) {
-        strncpy((char*)g_wifi_config.sta.ssid, WIFI_SSID, sizeof(g_wifi_config.sta.ssid) - 1);
-        strncpy((char*)g_wifi_config.sta.password, WIFI_PASSWORD, sizeof(g_wifi_config.sta.password) - 1);
-        g_wifi_config.sta.threshold.authmode = WIFI_AUTH_WPA2_PSK;
+    // NVSからWiFi設定を読み込み
+    wifi_config_t nvs_wifi_config = {0};
+    esp_err_t nvs_ret = nvs_config_load_wifi_config(&nvs_wifi_config);
+
+    if (nvs_ret == ESP_OK) {
+        // NVSから読み込み成功
+        memcpy(&g_wifi_config, &nvs_wifi_config, sizeof(wifi_config_t));
 
         ret = esp_wifi_set_config(WIFI_IF_STA, &g_wifi_config);
         if (ret != ESP_OK) {
             ESP_LOGE(TAG, "WiFi設定失敗: %s", esp_err_to_name(ret));
             return ret;
         }
-        ESP_LOGI(TAG, "✅ WiFi管理システム初期化完了 - デフォルトSSID: %s", WIFI_SSID);
+        ESP_LOGI(TAG, "✅ WiFi管理システム初期化完了 - NVSから読み込み: SSID=%s", g_wifi_config.sta.ssid);
     } else {
-        // SSIDが空の場合、BLE経由での設定を待つ
-        g_wifi_config.sta.threshold.authmode = WIFI_AUTH_WPA2_PSK;
-        ESP_LOGI(TAG, "✅ WiFi管理システム初期化完了 - SSID未設定（BLE経由で設定してください）");
+        // NVSにデータがない場合、デフォルト値を使用
+        if (strlen(WIFI_SSID) > 0) {
+            strncpy((char*)g_wifi_config.sta.ssid, WIFI_SSID, sizeof(g_wifi_config.sta.ssid) - 1);
+            strncpy((char*)g_wifi_config.sta.password, WIFI_PASSWORD, sizeof(g_wifi_config.sta.password) - 1);
+            g_wifi_config.sta.threshold.authmode = WIFI_AUTH_WPA2_PSK;
+
+            ret = esp_wifi_set_config(WIFI_IF_STA, &g_wifi_config);
+            if (ret != ESP_OK) {
+                ESP_LOGE(TAG, "WiFi設定失敗: %s", esp_err_to_name(ret));
+                return ret;
+            }
+            ESP_LOGI(TAG, "✅ WiFi管理システム初期化完了 - デフォルトSSID: %s", WIFI_SSID);
+        } else {
+            // SSIDが空の場合、BLE経由での設定を待つ
+            g_wifi_config.sta.threshold.authmode = WIFI_AUTH_WPA2_PSK;
+            ESP_LOGI(TAG, "✅ WiFi管理システム初期化完了 - SSID未設定（BLE経由で設定してください）");
+        }
     }
 
     // コールバック設定

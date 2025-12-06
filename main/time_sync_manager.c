@@ -3,6 +3,7 @@
 #include "esp_sntp.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "nvs_config.h"
 #include <sys/time.h>
 #include <string.h>
 
@@ -46,8 +47,19 @@ esp_err_t time_sync_manager_init(time_sync_callback_t callback)
         return ESP_OK;
     }
 
-    // デフォルトタイムゾーン設定
-    strncpy(g_time_manager.timezone, TIMEZONE, MAX_TIMEZONE_LENGTH - 1);
+    // NVSからタイムゾーン設定を読み込み
+    char nvs_timezone[MAX_TIMEZONE_LENGTH] = {0};
+    esp_err_t nvs_ret = nvs_config_load_timezone(nvs_timezone, MAX_TIMEZONE_LENGTH);
+
+    if (nvs_ret == ESP_OK) {
+        // NVSから読み込み成功
+        strncpy(g_time_manager.timezone, nvs_timezone, MAX_TIMEZONE_LENGTH - 1);
+        ESP_LOGI(TAG, "タイムゾーン設定をNVSから読み込みました: %s", g_time_manager.timezone);
+    } else {
+        // NVSにデータがない場合、デフォルト値を使用
+        strncpy(g_time_manager.timezone, TIMEZONE, MAX_TIMEZONE_LENGTH - 1);
+        ESP_LOGI(TAG, "デフォルトタイムゾーン設定を使用: %s", TIMEZONE);
+    }
     g_time_manager.timezone[MAX_TIMEZONE_LENGTH - 1] = '\0';
 
     // タイムゾーン適用
