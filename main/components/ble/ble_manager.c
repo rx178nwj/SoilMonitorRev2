@@ -553,6 +553,23 @@ static esp_err_t handle_wifi_connect(uint8_t sequence_num, uint8_t *response_buf
     resp->sequence_num = sequence_num;
     resp->data_length = 0;
 
+    // 既に同じSSIDに接続済みかチェック
+    if (wifi_manager_is_connected()) {
+        wifi_ap_record_t ap_info;
+        esp_err_t err = wifi_manager_get_ap_info(&ap_info);
+
+        if (err == ESP_OK) {
+            // 現在接続中のSSIDと設定されているSSIDを比較
+            if (strcmp((char*)ap_info.ssid, (char*)g_wifi_config.sta.ssid) == 0) {
+                // 既に同じSSIDに接続済み
+                resp->status_code = RESP_STATUS_SUCCESS;
+                ESP_LOGI(TAG, "Already connected to SSID: %s - skipping reconnection", ap_info.ssid);
+                *response_length = sizeof(ble_response_packet_t);
+                return ESP_OK;
+            }
+        }
+    }
+
     // WiFi接続を開始
     esp_err_t err = wifi_manager_start();
     if (err == ESP_OK) {
