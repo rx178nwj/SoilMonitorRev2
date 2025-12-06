@@ -73,6 +73,8 @@ static esp_err_t handle_sync_time(uint8_t sequence_num, uint8_t *response_buffer
 static esp_err_t handle_wifi_disconnect(uint8_t sequence_num, uint8_t *response_buffer, size_t *response_length);
 static esp_err_t handle_save_wifi_config(uint8_t sequence_num, uint8_t *response_buffer, size_t *response_length);
 static esp_err_t handle_save_plant_profile(uint8_t sequence_num, uint8_t *response_buffer, size_t *response_length);
+static esp_err_t handle_set_timezone(const uint8_t *data, uint16_t data_length, uint8_t sequence_num, uint8_t *response_buffer, size_t *response_length);
+static esp_err_t handle_save_timezone(uint8_t sequence_num, uint8_t *response_buffer, size_t *response_length);
 static esp_err_t find_data_by_time(const struct tm *target_time, time_data_response_t *result);
 static esp_err_t send_response_notification(const uint8_t *response_data, size_t response_length);
 
@@ -364,6 +366,12 @@ static esp_err_t process_ble_command(const ble_command_packet_t *cmd_packet,
         case CMD_SAVE_PLANT_PROFILE:
             err = handle_save_plant_profile(cmd_packet->sequence_num, response_buffer, response_length);
             break;
+        case CMD_SET_TIMEZONE:
+            err = handle_set_timezone(cmd_packet->data, cmd_packet->data_length, cmd_packet->sequence_num, response_buffer, response_length);
+            break;
+        case CMD_SAVE_TIMEZONE:
+            err = handle_save_timezone(cmd_packet->sequence_num, response_buffer, response_length);
+            break;
         default: {
             ble_response_packet_t *resp = (ble_response_packet_t *)response_buffer;
             resp->response_id = cmd_packet->command_id;
@@ -607,8 +615,8 @@ static esp_err_t handle_get_timezone(uint8_t sequence_num, uint8_t *response_buf
     resp->sequence_num = sequence_num;
     resp->status_code = RESP_STATUS_SUCCESS;
 
-    // タイムゾーン文字列を取得（time_sync_manager.hで定義）
-    const char *timezone_str = TIMEZONE;
+    // タイムゾーン文字列を取得（time_sync_managerから）
+    const char *timezone_str = time_sync_manager_get_timezone();
     size_t tz_len = strlen(timezone_str);
 
     // タイムゾーン文字列をレスポンスデータにコピー（NULL終端を含む）
@@ -719,6 +727,76 @@ static esp_err_t handle_save_plant_profile(uint8_t sequence_num, uint8_t *respon
     } else {
         resp->status_code = RESP_STATUS_ERROR;
         ESP_LOGE(TAG, "Failed to save plant profile to NVS: %s", esp_err_to_name(err));
+    }
+
+    *response_length = sizeof(ble_response_packet_t);
+    return ESP_OK;
+}
+
+static esp_err_t handle_set_timezone(const uint8_t *data, uint16_t data_length, uint8_t sequence_num, uint8_t *response_buffer, size_t *response_length)
+{
+    ble_response_packet_t *resp = (ble_response_packet_t *)response_buffer;
+    resp->response_id = CMD_SET_TIMEZONE;
+    resp->sequence_num = sequence_num;
+    resp->data_length = 0;
+
+    ESP_LOGI(TAG, "CMD_SET_TIMEZONE received. Setting timezone.");
+
+    // タイムゾーン文字列をチェック（最大64文字）
+    if (data_length == 0 || data_length > 64) {
+        resp->status_code = RESP_STATUS_INVALID_PARAMETER;
+        ESP_LOGE(TAG, "Invalid timezone data length: %d", data_length);
+        *response_length = sizeof(ble_response_packet_t);
+        return ESP_OK;
+    }
+
+    // タイムゾーン文字列をコピー（NULL終端を保証）
+    char timezone[65];
+    memcpy(timezone, data, data_length);
+    timezone[data_length] = '\0';
+
+    // time_sync_managerにタイムゾーンを設定
+    esp_err_t err = time_sync_manager_set_timezone(timezone);
+
+    if (err == ESP_OK) {
+        resp->status_code = RESP_STATUS_SUCCESS;
+        ESP_LOGI(TAG, "Timezone set successfully: %s", timezone);
+    } else {
+        resp->status_code = RESP_STATUS_ERROR;
+        ESP_LOGE(TAG, "Failed to set timezone: %s", esp_err_to_name(err));
+    }
+
+    *response_length = sizeof(ble_response_packet_t);
+    return ESP_OK;
+}
+
+static esp_err_t handle_save_timezone(uint8_t sequence_num, uint8_t *response_buffer, size_t *response_length)
+{
+    ble_response_packet_t *resp = (ble_response_packet_t *)response_buffer;
+    resp->response_id = CMD_SAVE_TIMEZONE;
+    resp->sequence_num = sequence_num;
+    resp->data_length = 0;
+
+    ESP_LOGI(TAG, "CMD_SAVE_TIMEZONE received. Saving current timezone to NVS.");
+
+    // 現在のタイムゾーンを取得
+    const char *timezone = time_sync_manager_get_timezone();
+    if (timezone == NULL) {
+        resp->status_code = RESP_STATUS_ERROR;
+        ESP_LOGE(TAG, "Failed to get current timezone");
+        *response_length = sizeof(ble_response_packet_t);
+        return ESP_OK;
+    }
+
+    // タイムゾーンをNVSに保存
+    esp_err_t err = nvs_config_save_timezone(timezone);
+
+    if (err == ESP_OK) {
+        resp->status_code = RESP_STATUS_SUCCESS;
+        ESP_LOGI(TAG, "Timezone saved to NVS successfully: %s", timezone);
+    } else {
+        resp->status_code = RESP_STATUS_ERROR;
+        ESP_LOGE(TAG, "Failed to save timezone to NVS: %s", esp_err_to_name(err));
     }
 
     *response_length = sizeof(ble_response_packet_t);

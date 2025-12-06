@@ -40,23 +40,27 @@ static void sntp_sync_notification_cb(struct timeval *tv)
 esp_err_t time_sync_manager_init(time_sync_callback_t callback)
 {
     ESP_LOGI(TAG, "⏰ 時刻同期管理システム初期化中...");
-    
+
     if (g_time_manager.initialized) {
         ESP_LOGW(TAG, "時刻同期管理システムは既に初期化されています");
         return ESP_OK;
     }
-    
-    // タイムゾーン設定
-    setenv("TZ", TIMEZONE, 1);
+
+    // デフォルトタイムゾーン設定
+    strncpy(g_time_manager.timezone, TIMEZONE, MAX_TIMEZONE_LENGTH - 1);
+    g_time_manager.timezone[MAX_TIMEZONE_LENGTH - 1] = '\0';
+
+    // タイムゾーン適用
+    setenv("TZ", g_time_manager.timezone, 1);
     tzset();
-    
+
     // コールバック設定
     g_time_manager.sync_callback = callback;
     g_time_manager.initialized = true;
     g_time_manager.sync_completed = false;
     g_time_manager.last_sync_time = 0;
-    
-    ESP_LOGI(TAG, "✅ 時刻同期管理システム初期化完了 - タイムゾーン: %s", TIMEZONE);
+
+    ESP_LOGI(TAG, "✅ 時刻同期管理システム初期化完了 - タイムゾーン: %s", g_time_manager.timezone);
     return ESP_OK;
 }
 
@@ -275,8 +279,50 @@ void time_sync_manager_format_time(const struct tm *timeinfo, char *buffer, size
     if (timeinfo == NULL || buffer == NULL || buffer_size == 0) {
         return;
     }
-    
+
     snprintf(buffer, buffer_size, "%04d/%02d/%02d %02d:%02d:%02d",
              timeinfo->tm_year + 1900, timeinfo->tm_mon + 1, timeinfo->tm_mday,
              timeinfo->tm_hour, timeinfo->tm_min, timeinfo->tm_sec);
+}
+
+/**
+ * @brief タイムゾーン設定
+ * @param timezone_str タイムゾーン文字列（POSIX形式、例: "JST-9"）
+ * @return ESP_OK: 成功, その他: エラー
+ */
+esp_err_t time_sync_manager_set_timezone(const char *timezone_str)
+{
+    if (timezone_str == NULL) {
+        ESP_LOGE(TAG, "Timezone string is NULL");
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    if (!g_time_manager.initialized) {
+        ESP_LOGE(TAG, "Time sync manager not initialized");
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    // タイムゾーン文字列のコピー
+    strncpy(g_time_manager.timezone, timezone_str, MAX_TIMEZONE_LENGTH - 1);
+    g_time_manager.timezone[MAX_TIMEZONE_LENGTH - 1] = '\0';
+
+    // タイムゾーン適用
+    setenv("TZ", g_time_manager.timezone, 1);
+    tzset();
+
+    ESP_LOGI(TAG, "✅ タイムゾーン変更: %s", g_time_manager.timezone);
+    return ESP_OK;
+}
+
+/**
+ * @brief タイムゾーン取得
+ * @return タイムゾーン文字列（内部バッファへのポインタ）
+ */
+const char* time_sync_manager_get_timezone(void)
+{
+    if (!g_time_manager.initialized) {
+        return TIMEZONE;  // デフォルト値を返す
+    }
+
+    return g_time_manager.timezone;
 }

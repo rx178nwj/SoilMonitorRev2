@@ -19,12 +19,16 @@ extern "C" {
 // 時刻同期コールバック関数型
 typedef void (*time_sync_callback_t)(struct timeval *tv);
 
+// タイムゾーン文字列の最大長
+#define MAX_TIMEZONE_LENGTH 64
+
 // 時刻同期管理構造体
 typedef struct {
     bool initialized;
     bool sync_completed;
     time_t last_sync_time;
     time_sync_callback_t sync_callback;
+    char timezone[MAX_TIMEZONE_LENGTH];  // 動的タイムゾーン
 } time_sync_manager_t;
 
 // 時刻同期管理関数
@@ -43,6 +47,10 @@ void time_sync_manager_print_time(void);
 
 // 時刻文字列変換
 void time_sync_manager_format_time(const struct tm *timeinfo, char *buffer, size_t buffer_size);
+
+// タイムゾーン設定・取得
+esp_err_t time_sync_manager_set_timezone(const char *timezone_str);
+const char* time_sync_manager_get_timezone(void);
 
 #ifdef __cplusplus
 }

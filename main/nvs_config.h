@@ -48,6 +48,21 @@ esp_err_t nvs_config_save_wifi_config(const wifi_config_t *wifi_config);
  */
 esp_err_t nvs_config_load_wifi_config(wifi_config_t *wifi_config);
 
+/**
+ * タイムゾーン設定をNVSに保存
+ * @param timezone タイムゾーン文字列
+ * @return ESP_OK on success
+ */
+esp_err_t nvs_config_save_timezone(const char *timezone);
+
+/**
+ * タイムゾーン設定をNVSから読み込み
+ * @param timezone 読み込み先のバッファ
+ * @param max_len バッファの最大長
+ * @return ESP_OK on success, ESP_ERR_NVS_NOT_FOUND if not found
+ */
+esp_err_t nvs_config_load_timezone(char *timezone, size_t max_len);
+
 #ifdef __cplusplus
 }
 #endif

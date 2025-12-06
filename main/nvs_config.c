@@ -10,6 +10,7 @@ static const char *TAG = "NVS_Config";
 #define NVS_NAMESPACE "plant_config"
 #define NVS_KEY_PROFILE "profile"
 #define NVS_KEY_WIFI "wifi_config"
+#define NVS_KEY_TIMEZONE "timezone"
 
 /**
  * デフォルトの植物プロファイル設定（多肉植物向け）
@@ -223,6 +224,88 @@ esp_err_t nvs_config_load_wifi_config(wifi_config_t *wifi_config) {
     }
 
     ESP_LOGI(TAG, "WiFi config loaded successfully: SSID=%s", wifi_config->sta.ssid);
+
+    nvs_close(nvs_handle);
+    return ESP_OK;
+}
+
+/**
+ * タイムゾーン設定をNVSに保存
+ */
+esp_err_t nvs_config_save_timezone(const char *timezone) {
+    if (timezone == NULL) {
+        ESP_LOGE(TAG, "Timezone pointer is NULL");
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    nvs_handle_t nvs_handle;
+    esp_err_t err;
+
+    // NVSハンドルを開く
+    err = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &nvs_handle);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Error opening NVS handle: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    // タイムゾーン文字列を保存
+    err = nvs_set_str(nvs_handle, NVS_KEY_TIMEZONE, timezone);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Error saving timezone: %s", esp_err_to_name(err));
+        nvs_close(nvs_handle);
+        return err;
+    }
+
+    // 変更をコミット
+    err = nvs_commit(nvs_handle);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Error committing NVS: %s", esp_err_to_name(err));
+    } else {
+        ESP_LOGI(TAG, "Timezone saved successfully: %s", timezone);
+    }
+
+    nvs_close(nvs_handle);
+    return err;
+}
+
+/**
+ * タイムゾーン設定をNVSから読み込み
+ */
+esp_err_t nvs_config_load_timezone(char *timezone, size_t max_len) {
+    if (timezone == NULL || max_len == 0) {
+        ESP_LOGE(TAG, "Invalid timezone buffer");
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    nvs_handle_t nvs_handle;
+    esp_err_t err;
+
+    // NVSハンドルを開く（読み取り専用）
+    err = nvs_open(NVS_NAMESPACE, NVS_READONLY, &nvs_handle);
+    if (err != ESP_OK) {
+        if (err == ESP_ERR_NVS_NOT_FOUND) {
+            ESP_LOGW(TAG, "NVS partition not found for timezone");
+        } else {
+            ESP_LOGE(TAG, "Error opening NVS handle: %s", esp_err_to_name(err));
+        }
+        return err;
+    }
+
+    // タイムゾーン文字列を読み込み
+    size_t required_size = max_len;
+    err = nvs_get_str(nvs_handle, NVS_KEY_TIMEZONE, timezone, &required_size);
+
+    if (err == ESP_ERR_NVS_NOT_FOUND) {
+        ESP_LOGW(TAG, "Timezone not found in NVS");
+        nvs_close(nvs_handle);
+        return err;
+    } else if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Error reading timezone: %s", esp_err_to_name(err));
+        nvs_close(nvs_handle);
+        return err;
+    }
+
+    ESP_LOGI(TAG, "Timezone loaded successfully: %s", timezone);
 
     nvs_close(nvs_handle);
     return ESP_OK;
