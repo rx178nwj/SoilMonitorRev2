@@ -1,0 +1,4 @@
+# WiFi設定テストスクリプト用 Pythonパッケージ
+# インストール方法: pip3 install -r requirements.txt
+
+bleak>=0.20.0

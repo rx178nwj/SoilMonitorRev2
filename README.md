@@ -442,6 +442,34 @@ data: (なし)
 
 ---
 
+### 0x0F: CMD_WIFI_CONNECT - WiFi接続実行
+
+設定されているWiFi情報を使用してWiFi接続を開始します。
+
+**コマンド**
+```
+command_id: 0x0F
+sequence_num: <任意>
+data_length: 0x0000
+data: (なし)
+```
+
+**レスポンス**
+```
+response_id: 0x0F
+status_code: 0x00 (成功) / 0x01 (エラー)
+sequence_num: <対応するシーケンス番号>
+data_length: 0x0000
+data: (なし)
+```
+
+**注意事項**:
+- 事前に`CMD_SET_WIFI_CONFIG`でSSIDとパスワードを設定しておく必要があります
+- WiFi接続は非同期で実行されます（レスポンスは接続開始の成否を示します）
+- 実際の接続状態は`CMD_GET_SYSTEM_STATUS`などで確認してください
+
+---
+
 ## 通信例
 
 ### Python実装例（bleak使用）
@@ -612,6 +640,15 @@ class PlantMonitor:
             "password": password_masked  # マスク表示（例: "abc***"）
         }
 
+    async def wifi_connect(self):
+        """WiFi接続実行"""
+        resp = await self.send_command(0x0F)
+
+        if resp["status"] != 0x00:
+            raise Exception(f"Failed to start WiFi connection: status {resp['status']}")
+
+        return True
+
     async def disconnect(self):
         """切断"""
         if self.client:
@@ -664,6 +701,10 @@ async def main():
         print(f"Current WiFi SSID: {wifi_config['ssid']}")
         print(f"Password (masked): {wifi_config['password']}")
 
+        # WiFi接続実行
+        await monitor.wifi_connect()
+        print("WiFi connection started!")
+
     finally:
         await monitor.disconnect()
 
@@ -679,6 +720,125 @@ if __name__ == "__main__":
 - **浮動小数点**: IEEE 754形式（32-bit単精度）
 - **文字列**: NULL終端、UTF-8エンコーディング
 - **構造体**: パック構造（アライメントなし）
+
+---
+
+## テストスクリプト
+
+プロジェクトには、Raspberry PiなどのLinuxデバイスからWiFi設定をテストするためのPythonスクリプトが含まれています。
+
+テストスクリプトは `tests/` ディレクトリに格納されています。詳細は [tests/README.md](tests/README.md) を参照してください。
+
+### 必要なパッケージのインストール
+
+```bash
+cd tests
+pip3 install -r requirements.txt
+```
+
+### 1. 対話式WiFi設定スクリプト（推奨）
+
+最も簡単な方法は対話式スクリプトを使用することです：
+
+```bash
+cd tests
+python3 wifi_setup_interactive.py
+```
+
+このスクリプトは以下を自動的に実行します：
+- PlantMonitorデバイスの検索
+- 現在のWiFi設定の表示
+- 新しいSSID/パスワードの入力
+- WiFi設定の送信と接続
+- 接続状態の確認
+
+**実行例：**
+```
+╔══════════════════════════════════════════════════════════════╗
+║                                                              ║
+║     PlantMonitor WiFi セットアップツール                     ║
+║     ESP32-C6 対話式設定スクリプト                            ║
+║                                                              ║
+╚══════════════════════════════════════════════════════════════╝
+
+🔍 PlantMonitorデバイスを検索中...
+✅ デバイスを発見: PlantMonitor_20_1A2B
+   アドレス: AA:BB:CC:DD:EE:FF
+
+🔗 接続中...
+✅ 接続完了
+
+SSIDを入力: MyWiFiNetwork
+パスワードを入力: MyPassword123
+
+✅ WiFi設定を送信しました
+🎉 WiFi接続に成功しました!
+```
+
+### 2. コマンドラインWiFi設定スクリプト
+
+コマンドラインから直接実行する場合：
+
+```bash
+cd tests
+
+# WiFi設定と接続
+python3 test_wifi_config.py --ssid "YourSSID" --password "YourPassword"
+
+# WiFi設定のみ（接続しない）
+python3 test_wifi_config.py --ssid "YourSSID" --password "YourPassword" --no-connect
+
+# 現在の設定を確認のみ
+python3 test_wifi_config.py --get-only
+
+# ステータスチェックも実行
+python3 test_wifi_config.py --ssid "YourSSID" --password "YourPassword" --check-status
+
+# 特定のデバイスアドレスを指定
+python3 test_wifi_config.py --address "AA:BB:CC:DD:EE:FF" --ssid "YourSSID" --password "YourPassword"
+```
+
+**オプション：**
+- `--ssid`: WiFi SSID（最大31文字）
+- `--password`: WiFiパスワード（最大63文字）
+- `--address`: デバイスのBLEアドレス（オプション）
+- `--device-name`: デバイス名のプレフィックス（デフォルト: PlantMonitor）
+- `--no-connect`: WiFi設定のみ行い、接続は実行しない
+- `--get-only`: 現在の設定を取得のみ
+- `--check-status`: 操作後にシステムステータスをチェック
+
+### スクリプトの動作フロー
+
+1. **デバイス検索**: BLE経由でPlantMonitorデバイスを検索
+2. **接続**: デバイスに接続し、通知を有効化
+3. **現在の設定取得**: `CMD_GET_WIFI_CONFIG`で現在の設定を表示
+4. **WiFi設定送信**: `CMD_SET_WIFI_CONFIG`でSSID/パスワードを送信
+5. **WiFi接続開始**: `CMD_WIFI_CONNECT`で接続を開始
+6. **ステータス確認**: `CMD_GET_SYSTEM_STATUS`で接続状態を確認
+
+### トラブルシューティング（テストスクリプト）
+
+**デバイスが見つからない場合：**
+```bash
+# Bluetoothサービスの確認
+sudo systemctl status bluetooth
+
+# Bluetoothの再起動
+sudo systemctl restart bluetooth
+```
+
+**Permission deniedエラーの場合：**
+```bash
+# ユーザーをbluetoothグループに追加
+sudo usermod -a -G bluetooth $USER
+
+# ログアウト/ログインして再試行
+```
+
+**接続できない場合：**
+- デバイスが電源投入されているか確認
+- 他のBLEクライアントが接続していないか確認
+- デバイスをリセットして再試行
 
 ---
 

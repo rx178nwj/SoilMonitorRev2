@@ -77,6 +77,7 @@ typedef enum {
     CMD_GET_PLANT_PROFILE = 0x0C,   // 植物プロファイル取得
     CMD_SET_WIFI_CONFIG = 0x0D,     // WiFi設定（SSID/パスワード）
     CMD_GET_WIFI_CONFIG = 0x0E,     // WiFi設定取得
+    CMD_WIFI_CONNECT = 0x0F,        // WiFi接続実行
 } ble_command_id_t;
 
 typedef enum {

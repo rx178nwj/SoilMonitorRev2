@@ -27,6 +27,7 @@
 #include "../../common_types.h"
 #include "../plant_logic/data_buffer.h"
 #include "../../nvs_config.h"
+#include "../../wifi_manager.h"
 
 static const char *TAG = "BLE_MGR";
 
@@ -65,6 +66,7 @@ static esp_err_t handle_get_device_info(uint8_t sequence_num, uint8_t *response_
 static esp_err_t handle_get_time_data(const uint8_t *data, uint16_t data_length, uint8_t sequence_num, uint8_t *response_buffer, size_t *response_length);
 static esp_err_t handle_set_wifi_config(const uint8_t *data, uint16_t data_length, uint8_t sequence_num, uint8_t *response_buffer, size_t *response_length);
 static esp_err_t handle_get_wifi_config(uint8_t sequence_num, uint8_t *response_buffer, size_t *response_length);
+static esp_err_t handle_wifi_connect(uint8_t sequence_num, uint8_t *response_buffer, size_t *response_length);
 static esp_err_t find_data_by_time(const struct tm *target_time, time_data_response_t *result);
 static esp_err_t send_response_notification(const uint8_t *response_data, size_t response_length);
 
@@ -338,6 +340,9 @@ static esp_err_t process_ble_command(const ble_command_packet_t *cmd_packet,
         case CMD_GET_WIFI_CONFIG:
             err = handle_get_wifi_config(cmd_packet->sequence_num, response_buffer, response_length);
             break;
+        case CMD_WIFI_CONNECT:
+            err = handle_wifi_connect(cmd_packet->sequence_num, response_buffer, response_length);
+            break;
         default: {
             ble_response_packet_t *resp = (ble_response_packet_t *)response_buffer;
             resp->response_id = cmd_packet->command_id;
@@ -523,6 +528,27 @@ static esp_err_t handle_get_wifi_config(uint8_t sequence_num, uint8_t *response_
     memcpy(resp->data, &wifi_data, sizeof(wifi_config_data_t));
     *response_length = sizeof(ble_response_packet_t) + sizeof(wifi_config_data_t);
 
+    return ESP_OK;
+}
+
+static esp_err_t handle_wifi_connect(uint8_t sequence_num, uint8_t *response_buffer, size_t *response_length)
+{
+    ble_response_packet_t *resp = (ble_response_packet_t *)response_buffer;
+    resp->response_id = CMD_WIFI_CONNECT;
+    resp->sequence_num = sequence_num;
+    resp->data_length = 0;
+
+    // WiFi接続を開始
+    esp_err_t err = wifi_manager_start();
+    if (err == ESP_OK) {
+        resp->status_code = RESP_STATUS_SUCCESS;
+        ESP_LOGI(TAG, "WiFi connection started");
+    } else {
+        resp->status_code = RESP_STATUS_ERROR;
+        ESP_LOGE(TAG, "Failed to start WiFi connection: %s", esp_err_to_name(err));
+    }
+
+    *response_length = sizeof(ble_response_packet_t);
     return ESP_OK;
 }
 
@@ -843,6 +869,7 @@ void print_ble_system_info(void)
     ESP_LOGI(TAG, "  - 0x0C: Get Plant Profile");
     ESP_LOGI(TAG, "  - 0x0D: Set WiFi Config (SSID/Password)");
     ESP_LOGI(TAG, "  - 0x0E: Get WiFi Config");
+    ESP_LOGI(TAG, "  - 0x0F: WiFi Connect");
     ESP_LOGI(TAG, "📡 BLE Characteristics:");
     ESP_LOGI(TAG, "  - Command: Write commands to device");
     ESP_LOGI(TAG, "  - Response: Read/Notify for command responses");
