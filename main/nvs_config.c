@@ -33,6 +33,9 @@ void nvs_config_set_default_plant_profile(plant_profile_t *profile) {
     profile->temp_high_limit = 35.0f;
     profile->temp_low_limit = 5.0f;
 
+    // 灌水検出閾値
+    profile->watering_threshold_mv = 200.0f;
+
     ESP_LOGI(TAG, "Default plant profile set for: %s", profile->plant_name);
 }
 
@@ -138,6 +141,8 @@ esp_err_t nvs_config_load_plant_profile(plant_profile_t *profile) {
     ESP_LOGI(TAG, "Temp Limits: High >= %.1f C, Low <= %.1f C",
                 profile->temp_high_limit,
                 profile->temp_low_limit);
+    ESP_LOGI(TAG, "Watering Detection: %.0fmV decrease threshold",
+                profile->watering_threshold_mv);
 
     nvs_close(nvs_handle);
     return ESP_OK;

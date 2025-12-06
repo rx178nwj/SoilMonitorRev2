@@ -12,9 +12,6 @@
 
 static const char *TAG = "PlantManager";
 
-// 灌水検出閾値（土壌水分が2回前から200mV以上下がったら灌水と判定）
-#define WATERING_DETECTION_THRESHOLD_MV  200.0f
-
 // プライベート変数
 static plant_profile_t g_plant_profile;
 static bool g_initialized = false;
@@ -22,7 +19,7 @@ static plant_condition_t g_last_plant_condition = SOIL_WET; // 初期状態は�
 
 // プライベート関数の宣言
 static plant_condition_t determine_plant_condition(const plant_profile_t *profile, const minute_data_t *latest_data);
-static bool detect_watering_event(float current_moisture);
+static bool detect_watering_event(float current_moisture, float threshold_mv);
 
 /**
  * 植物管理システムを初期化
@@ -180,9 +177,9 @@ static plant_condition_t determine_plant_condition(const plant_profile_t *profil
     }
 
     // 灌水完了判定（2つの条件のいずれかで判定）
-    // 条件1: 2回前のサンプリングから200mV以上下がった場合
-    if (detect_watering_event(soil_moisture)) {
-        ESP_LOGI(TAG, "💧 灌水イベント検出: 土壌水分が2回前から200mV以上減少");
+    // 条件1: 2回前のサンプリングから設定値以上下がった場合
+    if (detect_watering_event(soil_moisture, profile->watering_threshold_mv)) {
+        ESP_LOGI(TAG, "💧 灌水イベント検出: 土壌水分が2回前から%.0fmV以上減少", profile->watering_threshold_mv);
         return WATERING_COMPLETED;
     }
 
@@ -244,12 +241,13 @@ static int compare_time_desc(const void *a, const void *b) {
 
 /**
  * 灌水イベントを検出
- * 2回前のサンプリングと比較して、土壌水分が200mV以上減少したか判定
+ * 2回前のサンプリングと比較して、土壌水分が指定閾値以上減少したか判定
  *
  * @param current_moisture 現在の土壌水分値 [mV]
+ * @param threshold_mv 灌水検出閾値 [mV]
  * @return true: 灌水イベント検出, false: 検出せず
  */
-static bool detect_watering_event(float current_moisture) {
+static bool detect_watering_event(float current_moisture, float threshold_mv) {
     uint16_t count = 0;
 
     // 過去1時間分のデータを取得
@@ -279,12 +277,12 @@ static bool detect_watering_event(float current_moisture) {
     // 土壌水分が2回前から200mV以上減少したか確認
     float moisture_decrease = moisture_2_samples_ago - current_moisture;
 
-    ESP_LOGD(TAG, "灌水検出チェック: 2回前=%.0fmV, 現在=%.0fmV, 減少量=%.0fmV",
-             moisture_2_samples_ago, current_moisture, moisture_decrease);
+    ESP_LOGD(TAG, "灌水検出チェック: 2回前=%.0fmV, 現在=%.0fmV, 減少量=%.0fmV, 閾値=%.0fmV",
+             moisture_2_samples_ago, current_moisture, moisture_decrease, threshold_mv);
 
-    if (moisture_decrease >= WATERING_DETECTION_THRESHOLD_MV) {
-        ESP_LOGI(TAG, "✅ 灌水イベント検出: 土壌水分が %.0fmV 減少 (2回前: %.0fmV → 現在: %.0fmV)",
-                 moisture_decrease, moisture_2_samples_ago, current_moisture);
+    if (moisture_decrease >= threshold_mv) {
+        ESP_LOGI(TAG, "✅ 灌水イベント検出: 土壌水分が %.0fmV 減少 (2回前: %.0fmV → 現在: %.0fmV, 閾値: %.0fmV)",
+                 moisture_decrease, moisture_2_samples_ago, current_moisture, threshold_mv);
         return true;
     }
 

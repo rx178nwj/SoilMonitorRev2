@@ -126,10 +126,11 @@ class PlantProfileTester:
         #     int soil_dry_days_for_watering;   // 4 bytes
         #     float temp_high_limit;            // 4 bytes
         #     float temp_low_limit;             // 4 bytes
-        # };  // Total: 52 bytes
+        #     float watering_threshold_mv;      // 4 bytes
+        # };  // Total: 60 bytes
 
-        if len(resp["data"]) < 52:
-            print(f"❌ Invalid plant profile data length: {len(resp['data'])} (expected 52)")
+        if len(resp["data"]) < 60:
+            print(f"❌ Invalid plant profile data length: {len(resp['data'])} (expected 60)")
             return None
 
         # 植物名（32バイト）を抽出
@@ -137,8 +138,8 @@ class PlantProfileTester:
         plant_name = plant_name_bytes.decode('utf-8', errors='ignore').rstrip('\x00')
 
         # 残りのパラメータを抽出（little-endian）
-        soil_dry_threshold, soil_wet_threshold, soil_dry_days, temp_high_limit, temp_low_limit = \
-            struct.unpack('<ffiff', resp["data"][32:52])
+        soil_dry_threshold, soil_wet_threshold, soil_dry_days, temp_high_limit, temp_low_limit, watering_threshold = \
+            struct.unpack('<ffifff', resp["data"][32:60])
 
         print(f"✅ Plant Profile:")
         print(f"   Plant Name: {plant_name}")
@@ -147,6 +148,7 @@ class PlantProfileTester:
         print(f"   Soil Dry Days for Watering: {soil_dry_days} days")
         print(f"   Temperature High Limit: {temp_high_limit:.1f} °C")
         print(f"   Temperature Low Limit: {temp_low_limit:.1f} °C")
+        print(f"   Watering Detection Threshold: {watering_threshold:.1f} mV")
 
         return {
             "plant_name": plant_name,
@@ -154,26 +156,28 @@ class PlantProfileTester:
             "soil_wet_threshold": soil_wet_threshold,
             "soil_dry_days_for_watering": soil_dry_days,
             "temp_high_limit": temp_high_limit,
-            "temp_low_limit": temp_low_limit
+            "temp_low_limit": temp_low_limit,
+            "watering_threshold_mv": watering_threshold
         }
 
     async def set_plant_profile(self, profile):
         """植物プロファイルを設定"""
         print(f"\n🌱 Setting plant profile...")
 
-        # plant_profile_t構造体を構築（52バイト）
+        # plant_profile_t構造体を構築（60バイト）
         plant_name_bytes = profile["plant_name"].encode('utf-8')[:31]  # 最大31文字 + NULL
 
-        data = bytearray(52)
+        data = bytearray(60)
         # 植物名（32バイト）
         data[0:len(plant_name_bytes)] = plant_name_bytes
         # 残りのパラメータ（little-endian）
-        struct.pack_into('<ffiff', data, 32,
+        struct.pack_into('<ffifff', data, 32,
                          profile["soil_dry_threshold"],
                          profile["soil_wet_threshold"],
                          profile["soil_dry_days_for_watering"],
                          profile["temp_high_limit"],
-                         profile["temp_low_limit"])
+                         profile["temp_low_limit"],
+                         profile.get("watering_threshold_mv", 200.0))
 
         resp = await self.send_command(CMD_SET_PLANT_PROFILE, bytes(data))
 
@@ -279,13 +283,17 @@ Examples:
             temp_low_str = input(f"Temperature Low Limit (°C) [{current_profile['temp_low_limit'] if current_profile else 5.0}]: ").strip()
             temp_low = float(temp_low_str) if temp_low_str else (current_profile['temp_low_limit'] if current_profile else 5.0)
 
+            watering_threshold_str = input(f"Watering Detection Threshold (mV) [{current_profile.get('watering_threshold_mv', 200.0) if current_profile else 200.0}]: ").strip()
+            watering_threshold = float(watering_threshold_str) if watering_threshold_str else (current_profile.get('watering_threshold_mv', 200.0) if current_profile else 200.0)
+
             new_profile = {
                 "plant_name": plant_name,
                 "soil_dry_threshold": soil_dry,
                 "soil_wet_threshold": soil_wet,
                 "soil_dry_days_for_watering": dry_days,
                 "temp_high_limit": temp_high,
-                "temp_low_limit": temp_low
+                "temp_low_limit": temp_low,
+                "watering_threshold_mv": watering_threshold
             }
 
             # 確認
@@ -298,6 +306,7 @@ Examples:
             print(f"   Soil Dry Days for Watering: {new_profile['soil_dry_days_for_watering']} days")
             print(f"   Temperature High Limit: {new_profile['temp_high_limit']:.1f} °C")
             print(f"   Temperature Low Limit: {new_profile['temp_low_limit']:.1f} °C")
+            print(f"   Watering Detection Threshold: {new_profile['watering_threshold_mv']:.1f} mV")
 
             confirm = input("\nApply this profile? (y/n): ").lower()
             if confirm == 'y':

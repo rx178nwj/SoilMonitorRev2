@@ -286,7 +286,7 @@ else:
 ```
 command_id: 0x03
 sequence_num: <任意>
-data_length: 56 (sizeof(plant_profile_t))
+data_length: 60 (sizeof(plant_profile_t))
 data: <plant_profile_t構造体>
 ```
 
@@ -299,10 +299,11 @@ struct plant_profile {
     int   soil_dry_days_for_watering;     // 水やり判定日数 [日] (例: 3)
     float temp_high_limit;                // 高温警告閾値 [°C] (例: 35.0)
     float temp_low_limit;                 // 低温警告閾値 [°C] (例: 10.0)
+    float watering_threshold_mv;          // 灌水検出閾値 [mV] (例: 200.0)
 } __attribute__((packed));
 ```
 
-**サイズ**: 56バイト
+**サイズ**: 60バイト
 
 **レスポンス**
 
@@ -324,7 +325,7 @@ data: (なし)
 
 **レスポンス**
 
-`plant_profile_t`構造体（56バイト）が返されます。構造は`CMD_SET_PLANT_PROFILE`と同じです。
+`plant_profile_t`構造体（60バイト）が返されます。構造は`CMD_SET_PLANT_PROFILE`と同じです。
 
 ---
 
@@ -850,14 +851,14 @@ class PlantMonitor:
         }
 
     async def set_plant_profile(self, name, dry_threshold, wet_threshold,
-                                dry_days, temp_high, temp_low):
+                                dry_days, temp_high, temp_low, watering_threshold=200.0):
         """植物プロファイル設定"""
         # 名前を32バイトにパディング
         name_bytes = name.encode('utf-8')[:31].ljust(32, b'\x00')
 
         # プロファイルデータをパック
-        data = name_bytes + struct.pack("<ffiff",
-            dry_threshold, wet_threshold, dry_days, temp_high, temp_low)
+        data = name_bytes + struct.pack("<ffifff",
+            dry_threshold, wet_threshold, dry_days, temp_high, temp_low, watering_threshold)
 
         resp = await self.send_command(0x03, data)
         return resp["status"] == 0x00
@@ -871,7 +872,7 @@ class PlantMonitor:
 
         # プロファイルをパース
         name = resp["data"][:32].decode('utf-8').rstrip('\x00')
-        values = struct.unpack("<ffiff", resp["data"][32:56])
+        values = struct.unpack("<ffifff", resp["data"][32:60])
 
         return {
             "plant_name": name,
@@ -879,7 +880,8 @@ class PlantMonitor:
             "soil_wet_threshold": values[1],
             "soil_dry_days_for_watering": values[2],
             "temp_high_limit": values[3],
-            "temp_low_limit": values[4]
+            "temp_low_limit": values[4],
+            "watering_threshold_mv": values[5]
         }
 
     async def get_device_info(self):
@@ -1041,7 +1043,8 @@ async def main():
             wet_threshold=1000.0,
             dry_days=3,
             temp_high=35.0,
-            temp_low=10.0
+            temp_low=10.0,
+            watering_threshold=200.0  # 灌水検出閾値
         )
         print("Profile set!")
 
