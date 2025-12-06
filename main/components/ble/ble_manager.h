@@ -60,6 +60,17 @@ typedef struct __attribute__((packed)) {
     char password[64];      // パスワード（NULL終端文字列）
 } wifi_config_data_t;
 
+// システムステータス構造体（CMD_GET_SYSTEM_STATUS用）
+typedef struct __attribute__((packed)) {
+    uint32_t uptime_seconds;    // 稼働時間（秒）
+    uint32_t heap_free;         // 空きヒープ（バイト）
+    uint32_t heap_min;          // 最小空きヒープ（バイト）
+    uint32_t task_count;        // タスク数
+    uint8_t wifi_connected;     // WiFi接続状態（0:未接続, 1:接続済み）
+    uint8_t ble_connected;      // BLE接続状態（0:未接続, 1:接続済み）
+    uint8_t padding[2];         // アライメント用パディング
+} system_status_t;
+
 /* --- Command and Response Enums --- */
 
 typedef enum {

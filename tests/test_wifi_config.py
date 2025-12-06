@@ -180,29 +180,26 @@ class PlantMonitorWiFiTester:
             return None
 
         # システムステータスをパース（system_status_t構造体）
-        if len(resp["data"]) >= 24:
-            uptime, heap_free, heap_min, task_count, cpu_usage, wifi_connected, ble_connected, error_flags = \
-                struct.unpack('<IIIIIBBxx', resp["data"][:24])
+        # struct: uptime(4), heap_free(4), heap_min(4), task_count(4), wifi_connected(1), ble_connected(1), padding(2)
+        if len(resp["data"]) >= 20:
+            uptime, heap_free, heap_min, task_count, wifi_connected, ble_connected = \
+                struct.unpack('<IIIIBBxx', resp["data"][:20])
 
             print(f"✅ System Status:")
             print(f"   Uptime: {uptime} seconds")
             print(f"   Free heap: {heap_free} bytes")
             print(f"   Min heap: {heap_min} bytes")
             print(f"   Task count: {task_count}")
-            print(f"   CPU usage: {cpu_usage}%")
             print(f"   WiFi connected: {'Yes' if wifi_connected else 'No'}")
             print(f"   BLE connected: {'Yes' if ble_connected else 'No'}")
-            print(f"   Error flags: 0x{error_flags:02X}")
 
             return {
                 "uptime": uptime,
                 "heap_free": heap_free,
                 "heap_min": heap_min,
                 "task_count": task_count,
-                "cpu_usage": cpu_usage,
                 "wifi_connected": bool(wifi_connected),
-                "ble_connected": bool(ble_connected),
-                "error_flags": error_flags
+                "ble_connected": bool(ble_connected)
             }
 
         return None

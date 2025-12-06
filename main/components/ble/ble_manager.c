@@ -394,21 +394,25 @@ static esp_err_t handle_get_sensor_data(uint8_t sequence_num, uint8_t *response_
 
 static esp_err_t handle_get_system_status(uint8_t sequence_num, uint8_t *response_buffer, size_t *response_length)
 {
-    size_t free_heap = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
-    size_t min_free_heap = heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL);
+    system_status_t status;
+    memset(&status, 0, sizeof(system_status_t));
 
-    char status_str[128];
-    snprintf(status_str, sizeof(status_str), "Uptime: %lu s, Free Heap: %u, Min Free: %u",
-             g_system_uptime, (unsigned int)free_heap, (unsigned int)min_free_heap);
+    // システム情報を取得
+    status.uptime_seconds = g_system_uptime;
+    status.heap_free = (uint32_t)heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
+    status.heap_min = (uint32_t)heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL);
+    status.task_count = (uint32_t)uxTaskGetNumberOfTasks();
+    status.wifi_connected = wifi_manager_is_connected() ? 1 : 0;
+    status.ble_connected = (g_conn_handle != BLE_HS_CONN_HANDLE_NONE) ? 1 : 0;
 
     ble_response_packet_t *resp = (ble_response_packet_t *)response_buffer;
     resp->response_id = CMD_GET_SYSTEM_STATUS;
     resp->status_code = RESP_STATUS_SUCCESS;
     resp->sequence_num = sequence_num;
-    resp->data_length = strlen(status_str);
+    resp->data_length = sizeof(system_status_t);
 
-    memcpy(resp->data, status_str, resp->data_length);
-    *response_length = sizeof(ble_response_packet_t) + resp->data_length;
+    memcpy(resp->data, &status, sizeof(system_status_t));
+    *response_length = sizeof(ble_response_packet_t) + sizeof(system_status_t);
 
     return ESP_OK;
 }
