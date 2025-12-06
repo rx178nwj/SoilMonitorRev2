@@ -7,9 +7,13 @@
 #include "esp_random.h"
 #include <string.h>
 #include <time.h>
+#include <stdlib.h>
 #include "../../common_types.h"
 
 static const char *TAG = "PlantManager";
+
+// 灌水検出閾値（土壌水分が2回前から200mV以上下がったら灌水と判定）
+#define WATERING_DETECTION_THRESHOLD_MV  200.0f
 
 // プライベート変数
 static plant_profile_t g_plant_profile;
@@ -18,6 +22,7 @@ static plant_condition_t g_last_plant_condition = SOIL_WET; // 初期状態は�
 
 // プライベート関数の宣言
 static plant_condition_t determine_plant_condition(const plant_profile_t *profile, const minute_data_t *latest_data);
+static bool detect_watering_event(float current_moisture);
 
 /**
  * 植物管理システムを初期化
@@ -174,8 +179,16 @@ static plant_condition_t determine_plant_condition(const plant_profile_t *profil
         return TEMP_TOO_LOW;
     }
 
-    // 灌水完了判定
+    // 灌水完了判定（2つの条件のいずれかで判定）
+    // 条件1: 2回前のサンプリングから200mV以上下がった場合
+    if (detect_watering_event(soil_moisture)) {
+        ESP_LOGI(TAG, "💧 灌水イベント検出: 土壌水分が2回前から200mV以上減少");
+        return WATERING_COMPLETED;
+    }
+
+    // 条件2: 従来の判定（乾燥状態から湿潤閾値以下になった場合）
     if ((g_last_plant_condition == SOIL_DRY || g_last_plant_condition == NEEDS_WATERING) && soil_moisture <= profile->soil_wet_threshold) {
+        ESP_LOGI(TAG, "💧 灌水完了: 乾燥状態から湿潤閾値以下に");
         return WATERING_COMPLETED;
     }
 
@@ -211,5 +224,70 @@ static plant_condition_t determine_plant_condition(const plant_profile_t *profil
 
     // 上記のいずれにも当てはまらない場合は、最後と同じ状態を維持
     return g_last_plant_condition;
+}
+
+/**
+ * time_t比較関数（qsort用）
+ */
+static int compare_time_desc(const void *a, const void *b) {
+    const minute_data_t *data_a = (const minute_data_t *)a;
+    const minute_data_t *data_b = (const minute_data_t *)b;
+
+    time_t time_a = mktime((struct tm*)&data_a->timestamp);
+    time_t time_b = mktime((struct tm*)&data_b->timestamp);
+
+    // 降順ソート（新しい順）
+    if (time_a > time_b) return -1;
+    if (time_a < time_b) return 1;
+    return 0;
+}
+
+/**
+ * 灌水イベントを検出
+ * 2回前のサンプリングと比較して、土壌水分が200mV以上減少したか判定
+ *
+ * @param current_moisture 現在の土壌水分値 [mV]
+ * @return true: 灌水イベント検出, false: 検出せず
+ */
+static bool detect_watering_event(float current_moisture) {
+    uint16_t count = 0;
+
+    // 過去1時間分のデータを取得
+    minute_data_t hour_data[60];
+    esp_err_t ret = data_buffer_get_recent_minute_data(1, hour_data, &count);
+
+    if (ret != ESP_OK || count < 3) {
+        // データが3件未満の場合は判定できない
+        ESP_LOGD(TAG, "灌水検出: データ不足 (count=%d)", count);
+        return false;
+    }
+
+    // データを新しい順にソート
+    qsort(hour_data, count, sizeof(minute_data_t), compare_time_desc);
+
+    // 最新3件のデータを使用
+    // インデックス0が最新、1が1回前、2が2回前
+    // 注意: インデックス0は現在追加中のデータなので、実際は1が最新、3が2回前
+    if (count < 3) {
+        ESP_LOGD(TAG, "灌水検出: ソート後のデータ不足 (count=%d)", count);
+        return false;
+    }
+
+    // インデックス2が2回前のデータ
+    float moisture_2_samples_ago = hour_data[2].soil_moisture;
+
+    // 土壌水分が2回前から200mV以上減少したか確認
+    float moisture_decrease = moisture_2_samples_ago - current_moisture;
+
+    ESP_LOGD(TAG, "灌水検出チェック: 2回前=%.0fmV, 現在=%.0fmV, 減少量=%.0fmV",
+             moisture_2_samples_ago, current_moisture, moisture_decrease);
+
+    if (moisture_decrease >= WATERING_DETECTION_THRESHOLD_MV) {
+        ESP_LOGI(TAG, "✅ 灌水イベント検出: 土壌水分が %.0fmV 減少 (2回前: %.0fmV → 現在: %.0fmV)",
+                 moisture_decrease, moisture_2_samples_ago, current_moisture);
+        return true;
+    }
+
+    return false;
 }
 
