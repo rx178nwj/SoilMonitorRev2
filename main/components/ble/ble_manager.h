@@ -93,6 +93,8 @@ typedef enum {
     CMD_GET_TIMEZONE = 0x10,        // タイムゾーン取得
     CMD_SYNC_TIME = 0x11,           // インターネット時刻同期
     CMD_WIFI_DISCONNECT = 0x12,     // WiFi切断
+    CMD_SAVE_WIFI_CONFIG = 0x13,    // WiFi設定をNVSに保存
+    CMD_SAVE_PLANT_PROFILE = 0x14,  // 植物プロファイルをNVSに保存
 } ble_command_id_t;
 
 typedef enum {

@@ -9,6 +9,7 @@ static const char *TAG = "NVS_Config";
 // NVSキー定義
 #define NVS_NAMESPACE "plant_config"
 #define NVS_KEY_PROFILE "profile"
+#define NVS_KEY_WIFI "wifi_config"
 
 /**
  * デフォルトの植物プロファイル設定（多肉植物向け）
@@ -136,6 +137,92 @@ esp_err_t nvs_config_load_plant_profile(plant_profile_t *profile) {
     ESP_LOGI(TAG, "Temp Limits: High >= %.1f C, Low <= %.1f C",
                 profile->temp_high_limit,
                 profile->temp_low_limit);
+
+    nvs_close(nvs_handle);
+    return ESP_OK;
+}
+
+/**
+ * WiFi設定をNVSに保存
+ */
+esp_err_t nvs_config_save_wifi_config(const wifi_config_t *wifi_config) {
+    if (wifi_config == NULL) {
+        ESP_LOGE(TAG, "WiFi config pointer is NULL");
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    nvs_handle_t nvs_handle;
+    esp_err_t err;
+
+    // NVSハンドルを開く
+    err = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &nvs_handle);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Error opening NVS handle: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    // WiFi設定をblobとして保存
+    err = nvs_set_blob(nvs_handle, NVS_KEY_WIFI, wifi_config, sizeof(wifi_config_t));
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Error saving WiFi config: %s", esp_err_to_name(err));
+        nvs_close(nvs_handle);
+        return err;
+    }
+
+    // 変更をコミット
+    err = nvs_commit(nvs_handle);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Error committing NVS: %s", esp_err_to_name(err));
+    } else {
+        ESP_LOGI(TAG, "WiFi config saved successfully: SSID=%s", wifi_config->sta.ssid);
+    }
+
+    nvs_close(nvs_handle);
+    return err;
+}
+
+/**
+ * WiFi設定をNVSから読み込み
+ */
+esp_err_t nvs_config_load_wifi_config(wifi_config_t *wifi_config) {
+    if (wifi_config == NULL) {
+        ESP_LOGE(TAG, "WiFi config pointer is NULL");
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    nvs_handle_t nvs_handle;
+    esp_err_t err;
+    size_t required_size = sizeof(wifi_config_t);
+
+    // NVSハンドルを開く（読み取り専用）
+    err = nvs_open(NVS_NAMESPACE, NVS_READONLY, &nvs_handle);
+    if (err != ESP_OK) {
+        if (err == ESP_ERR_NVS_NOT_FOUND) {
+            ESP_LOGW(TAG, "NVS partition not found for WiFi config");
+        } else {
+            ESP_LOGE(TAG, "Error opening NVS handle: %s", esp_err_to_name(err));
+        }
+        return err;
+    }
+
+    // WiFi設定をblobとして読み込み
+    err = nvs_get_blob(nvs_handle, NVS_KEY_WIFI, wifi_config, &required_size);
+
+    if (err == ESP_ERR_NVS_NOT_FOUND) {
+        ESP_LOGW(TAG, "WiFi config not found in NVS");
+        nvs_close(nvs_handle);
+        return err;
+    } else if (required_size != sizeof(wifi_config_t)) {
+        ESP_LOGE(TAG, "WiFi config size mismatch. Expected: %zu, Got: %zu", sizeof(wifi_config_t), required_size);
+        nvs_close(nvs_handle);
+        return ESP_ERR_INVALID_SIZE;
+    } else if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Error reading WiFi config: %s", esp_err_to_name(err));
+        nvs_close(nvs_handle);
+        return err;
+    }
+
+    ESP_LOGI(TAG, "WiFi config loaded successfully: SSID=%s", wifi_config->sta.ssid);
 
     nvs_close(nvs_handle);
     return ESP_OK;

@@ -71,6 +71,8 @@ static esp_err_t handle_wifi_connect(uint8_t sequence_num, uint8_t *response_buf
 static esp_err_t handle_get_timezone(uint8_t sequence_num, uint8_t *response_buffer, size_t *response_length);
 static esp_err_t handle_sync_time(uint8_t sequence_num, uint8_t *response_buffer, size_t *response_length);
 static esp_err_t handle_wifi_disconnect(uint8_t sequence_num, uint8_t *response_buffer, size_t *response_length);
+static esp_err_t handle_save_wifi_config(uint8_t sequence_num, uint8_t *response_buffer, size_t *response_length);
+static esp_err_t handle_save_plant_profile(uint8_t sequence_num, uint8_t *response_buffer, size_t *response_length);
 static esp_err_t find_data_by_time(const struct tm *target_time, time_data_response_t *result);
 static esp_err_t send_response_notification(const uint8_t *response_data, size_t response_length);
 
@@ -355,6 +357,12 @@ static esp_err_t process_ble_command(const ble_command_packet_t *cmd_packet,
             break;
         case CMD_WIFI_DISCONNECT:
             err = handle_wifi_disconnect(cmd_packet->sequence_num, response_buffer, response_length);
+            break;
+        case CMD_SAVE_WIFI_CONFIG:
+            err = handle_save_wifi_config(cmd_packet->sequence_num, response_buffer, response_length);
+            break;
+        case CMD_SAVE_PLANT_PROFILE:
+            err = handle_save_plant_profile(cmd_packet->sequence_num, response_buffer, response_length);
             break;
         default: {
             ble_response_packet_t *resp = (ble_response_packet_t *)response_buffer;
@@ -654,6 +662,63 @@ static esp_err_t handle_wifi_disconnect(uint8_t sequence_num, uint8_t *response_
     } else {
         resp->status_code = RESP_STATUS_ERROR;
         ESP_LOGE(TAG, "Failed to trigger WiFi disconnection: %s", esp_err_to_name(disconnect_err));
+    }
+
+    *response_length = sizeof(ble_response_packet_t);
+    return ESP_OK;
+}
+
+static esp_err_t handle_save_wifi_config(uint8_t sequence_num, uint8_t *response_buffer, size_t *response_length)
+{
+    ble_response_packet_t *resp = (ble_response_packet_t *)response_buffer;
+    resp->response_id = CMD_SAVE_WIFI_CONFIG;
+    resp->sequence_num = sequence_num;
+    resp->data_length = 0;
+
+    ESP_LOGI(TAG, "CMD_SAVE_WIFI_CONFIG received. Saving current WiFi config to NVS.");
+
+    // 現在のWiFi設定をNVSに保存
+    esp_err_t err = nvs_config_save_wifi_config(&g_wifi_config);
+
+    if (err == ESP_OK) {
+        resp->status_code = RESP_STATUS_SUCCESS;
+        ESP_LOGI(TAG, "WiFi config saved to NVS successfully.");
+    } else {
+        resp->status_code = RESP_STATUS_ERROR;
+        ESP_LOGE(TAG, "Failed to save WiFi config to NVS: %s", esp_err_to_name(err));
+    }
+
+    *response_length = sizeof(ble_response_packet_t);
+    return ESP_OK;
+}
+
+static esp_err_t handle_save_plant_profile(uint8_t sequence_num, uint8_t *response_buffer, size_t *response_length)
+{
+    ble_response_packet_t *resp = (ble_response_packet_t *)response_buffer;
+    resp->response_id = CMD_SAVE_PLANT_PROFILE;
+    resp->sequence_num = sequence_num;
+    resp->data_length = 0;
+
+    ESP_LOGI(TAG, "CMD_SAVE_PLANT_PROFILE received. Saving current plant profile to NVS.");
+
+    // 現在の植物プロファイルを取得
+    const plant_profile_t *profile = plant_manager_get_profile();
+    if (profile == NULL) {
+        resp->status_code = RESP_STATUS_ERROR;
+        ESP_LOGE(TAG, "Failed to get current plant profile");
+        *response_length = sizeof(ble_response_packet_t);
+        return ESP_OK;
+    }
+
+    // 植物プロファイルをNVSに保存
+    esp_err_t err = nvs_config_save_plant_profile(profile);
+
+    if (err == ESP_OK) {
+        resp->status_code = RESP_STATUS_SUCCESS;
+        ESP_LOGI(TAG, "Plant profile saved to NVS successfully: %s", profile->plant_name);
+    } else {
+        resp->status_code = RESP_STATUS_ERROR;
+        ESP_LOGE(TAG, "Failed to save plant profile to NVS: %s", esp_err_to_name(err));
     }
 
     *response_length = sizeof(ble_response_packet_t);
