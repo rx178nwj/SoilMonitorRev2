@@ -25,6 +25,7 @@ CMD_SET_WIFI_CONFIG = 0x0D
 CMD_GET_WIFI_CONFIG = 0x0E
 CMD_WIFI_CONNECT = 0x0F
 CMD_GET_SYSTEM_STATUS = 0x02
+CMD_GET_TIMEZONE = 0x10
 
 # Response Status
 RESP_STATUS_SUCCESS = 0x00
@@ -195,10 +196,28 @@ class WiFiSetup:
             print("❌ ステータスの取得に失敗しました")
             return False
 
+    async def get_timezone(self):
+        """タイムゾーン取得"""
+        print(f"\n🌏 タイムゾーン情報を取得中...")
+
+        resp = await self.send_command(CMD_GET_TIMEZONE)
+
+        if resp["status"] == RESP_STATUS_SUCCESS:
+            timezone = resp["data"].decode('utf-8').rstrip('\x00')
+            print(f"✅ デバイスのタイムゾーン: {timezone}")
+            return timezone
+        else:
+            print("❌ タイムゾーンの取得に失敗しました")
+            return None
+
     async def disconnect(self):
         """切断"""
         if self.client and self.client.is_connected:
-            await self.client.disconnect()
+            try:
+                await self.client.disconnect()
+            except Exception as e:
+                # 切断エラーは無視（既に切断済みの可能性がある）
+                pass
 
 
 async def main():
@@ -224,6 +243,9 @@ async def main():
 
         # 現在の設定を表示
         current_ssid = await setup.get_current_config()
+
+        # タイムゾーン情報を表示
+        await setup.get_timezone()
 
         # WiFi設定入力
         print("\n" + "="*60)

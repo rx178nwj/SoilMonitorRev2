@@ -116,6 +116,9 @@ python3 test_wifi_config.py --ssid "MyNetwork" --password "MyPassword" --no-conn
 # 現在の設定を確認するだけ
 python3 test_wifi_config.py --get-only
 
+# タイムゾーン情報を取得
+python3 test_wifi_config.py --get-timezone
+
 # ステータスチェックも含める
 python3 test_wifi_config.py --ssid "MyNetwork" --password "MyPassword" --check-status
 
@@ -130,12 +133,13 @@ python3 test_wifi_config.py --device-name "CustomName" --ssid "MyNetwork" --pass
 
 | オプション | 説明 | デフォルト |
 |-----------|------|-----------|
-| `--ssid` | WiFi SSID（最大31文字） | 必須（--get-onlyを除く） |
-| `--password` | WiFiパスワード（最大63文字） | 必須（--get-onlyを除く） |
+| `--ssid` | WiFi SSID（最大31文字） | 必須（--get-only, --get-timezoneを除く） |
+| `--password` | WiFiパスワード（最大63文字） | 必須（--get-only, --get-timezoneを除く） |
 | `--address` | デバイスのBLEアドレス | 自動検索 |
 | `--device-name` | 検索するデバイス名のプレフィックス | PlantMonitor |
 | `--no-connect` | WiFi設定のみで接続しない | False |
 | `--get-only` | 現在の設定を取得のみ | False |
+| `--get-timezone` | デバイスのタイムゾーン情報を取得 | False |
 | `--check-status` | 操作後にステータス確認 | False |
 
 ---
@@ -173,14 +177,26 @@ python3 test_wifi_config.py --get-only
    Password (masked): MyP***
 ```
 
-### シーン4: 設定は送信するが、すぐには接続しない
+### シーン4: デバイスのタイムゾーン情報を確認する
+
+```bash
+# タイムゾーン情報を取得
+python3 test_wifi_config.py --get-timezone
+```
+
+出力例：
+```
+✅ Device timezone: JST-9
+```
+
+### シーン5: 設定は送信するが、すぐには接続しない
 
 ```bash
 # 設定のみ送信（デバイス再起動時に自動接続される）
 python3 test_wifi_config.py --ssid "MyNetwork" --password "MyPassword" --no-connect
 ```
 
-### シーン5: 複数のPlantMonitorデバイスがある
+### シーン6: 複数のPlantMonitorデバイスがある
 
 ```bash
 # 特定のアドレスを指定
@@ -443,6 +459,7 @@ A: セキュリティ上、パスワードは最初の3文字のみ表示され�
 - `get_wifi_config()`: WiFi設定取得
 - `wifi_connect()`: WiFi接続開始
 - `get_system_status()`: システムステータス取得
+- `get_timezone()`: タイムゾーン情報取得
 
 ### BLEプロトコル
 

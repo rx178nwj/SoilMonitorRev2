@@ -26,6 +26,7 @@ CMD_SET_WIFI_CONFIG = 0x0D
 CMD_GET_WIFI_CONFIG = 0x0E
 CMD_WIFI_CONNECT = 0x0F
 CMD_GET_SYSTEM_STATUS = 0x02
+CMD_GET_TIMEZONE = 0x10
 
 # Response Status
 RESP_STATUS_SUCCESS = 0x00
@@ -214,11 +215,31 @@ class PlantMonitorWiFiTester:
 
         return None
 
+    async def get_timezone(self):
+        """タイムゾーンを取得"""
+        print(f"\n🌏 Getting timezone...")
+
+        resp = await self.send_command(CMD_GET_TIMEZONE)
+
+        if resp["status"] != RESP_STATUS_SUCCESS:
+            print(f"❌ Failed to get timezone (status: {resp['status']})")
+            return None
+
+        # タイムゾーン文字列をパース
+        timezone = resp["data"].decode('utf-8').rstrip('\x00')
+
+        print(f"✅ Device timezone: {timezone}")
+        return timezone
+
     async def disconnect(self):
         """切断"""
         if self.client and self.client.is_connected:
-            await self.client.disconnect()
-            print("\n👋 Disconnected")
+            try:
+                await self.client.disconnect()
+                print("\n👋 Disconnected")
+            except Exception as e:
+                # 切断エラーは無視（既に切断済みの可能性がある）
+                pass
 
 
 async def main():
@@ -236,6 +257,9 @@ Examples:
   # 現在の設定を確認のみ
   python3 test_wifi_config.py --get-only
 
+  # タイムゾーン情報を取得
+  python3 test_wifi_config.py --get-timezone
+
   # 特定のデバイスに接続
   python3 test_wifi_config.py --address "AA:BB:CC:DD:EE:FF" --ssid "MyNetwork" --password "MyPassword"
         """
@@ -252,12 +276,14 @@ Examples:
                        help='Only get current WiFi config, do not set')
     parser.add_argument('--check-status', action='store_true',
                        help='Check system status after operations')
+    parser.add_argument('--get-timezone', action='store_true',
+                       help='Get device timezone information')
 
     args = parser.parse_args()
 
     # パラメータチェック
-    if not args.get_only and (args.ssid is None or args.password is None):
-        parser.error("--ssid and --password are required unless --get-only is specified")
+    if not args.get_only and not args.get_timezone and (args.ssid is None or args.password is None):
+        parser.error("--ssid and --password are required unless --get-only or --get-timezone is specified")
 
     tester = PlantMonitorWiFiTester(device_name_prefix=args.device_name)
 
@@ -265,7 +291,11 @@ Examples:
         # 接続
         await tester.connect(address=args.address)
 
-        if args.get_only:
+        if args.get_timezone:
+            # タイムゾーン情報を取得
+            await tester.get_timezone()
+            return 0
+        elif args.get_only:
             # 現在の設定を取得のみ
             await tester.get_wifi_config()
         else:

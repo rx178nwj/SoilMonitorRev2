@@ -489,6 +489,43 @@ data: (なし)
 
 ---
 
+### 0x10: CMD_GET_TIMEZONE - タイムゾーン取得
+
+デバイスに設定されているタイムゾーン情報を取得します。
+
+**コマンド**
+```
+command_id: 0x10
+sequence_num: <任意>
+data_length: 0x0000
+data: (なし)
+```
+
+**レスポンス**
+```
+response_id: 0x10
+status_code: 0x00 (成功)
+sequence_num: <対応するシーケンス番号>
+data_length: <タイムゾーン文字列のバイト数（NULL終端を含む）>
+data: タイムゾーン文字列（例: "JST-9"）
+```
+
+**レスポンスデータ**:
+- タイムゾーン文字列（NULL終端文字列）
+- 例: "JST-9" (日本標準時、UTC+9)
+- POSIXタイムゾーン形式で返されます
+
+**使用例**:
+```python
+# Pythonでの使用例
+resp = await send_command(CMD_GET_TIMEZONE)
+if resp["status"] == RESP_STATUS_SUCCESS:
+    timezone = resp["data"].decode('utf-8').rstrip('\x00')
+    print(f"Device timezone: {timezone}")
+```
+
+---
+
 ## 通信例
 
 ### Python実装例（bleak使用）

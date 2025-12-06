@@ -28,6 +28,7 @@
 #include "../plant_logic/data_buffer.h"
 #include "../../nvs_config.h"
 #include "../../wifi_manager.h"
+#include "../../time_sync_manager.h"
 
 static const char *TAG = "BLE_MGR";
 
@@ -67,6 +68,7 @@ static esp_err_t handle_get_time_data(const uint8_t *data, uint16_t data_length,
 static esp_err_t handle_set_wifi_config(const uint8_t *data, uint16_t data_length, uint8_t sequence_num, uint8_t *response_buffer, size_t *response_length);
 static esp_err_t handle_get_wifi_config(uint8_t sequence_num, uint8_t *response_buffer, size_t *response_length);
 static esp_err_t handle_wifi_connect(uint8_t sequence_num, uint8_t *response_buffer, size_t *response_length);
+static esp_err_t handle_get_timezone(uint8_t sequence_num, uint8_t *response_buffer, size_t *response_length);
 static esp_err_t find_data_by_time(const struct tm *target_time, time_data_response_t *result);
 static esp_err_t send_response_notification(const uint8_t *response_data, size_t response_length);
 
@@ -343,6 +345,9 @@ static esp_err_t process_ble_command(const ble_command_packet_t *cmd_packet,
         case CMD_WIFI_CONNECT:
             err = handle_wifi_connect(cmd_packet->sequence_num, response_buffer, response_length);
             break;
+        case CMD_GET_TIMEZONE:
+            err = handle_get_timezone(cmd_packet->sequence_num, response_buffer, response_length);
+            break;
         default: {
             ble_response_packet_t *resp = (ble_response_packet_t *)response_buffer;
             resp->response_id = cmd_packet->command_id;
@@ -559,6 +564,27 @@ static esp_err_t handle_wifi_connect(uint8_t sequence_num, uint8_t *response_buf
     }
 
     *response_length = sizeof(ble_response_packet_t);
+    return ESP_OK;
+}
+
+static esp_err_t handle_get_timezone(uint8_t sequence_num, uint8_t *response_buffer, size_t *response_length)
+{
+    ble_response_packet_t *resp = (ble_response_packet_t *)response_buffer;
+    resp->response_id = CMD_GET_TIMEZONE;
+    resp->sequence_num = sequence_num;
+    resp->status_code = RESP_STATUS_SUCCESS;
+
+    // タイムゾーン文字列を取得（time_sync_manager.hで定義）
+    const char *timezone_str = TIMEZONE;
+    size_t tz_len = strlen(timezone_str);
+
+    // タイムゾーン文字列をレスポンスデータにコピー（NULL終端を含む）
+    memcpy(resp->data, timezone_str, tz_len + 1);
+    resp->data_length = tz_len + 1;
+
+    *response_length = sizeof(ble_response_packet_t) + resp->data_length;
+
+    ESP_LOGI(TAG, "Timezone retrieved: %s", timezone_str);
     return ESP_OK;
 }
 
@@ -880,6 +906,7 @@ void print_ble_system_info(void)
     ESP_LOGI(TAG, "  - 0x0D: Set WiFi Config (SSID/Password)");
     ESP_LOGI(TAG, "  - 0x0E: Get WiFi Config");
     ESP_LOGI(TAG, "  - 0x0F: WiFi Connect");
+    ESP_LOGI(TAG, "  - 0x10: Get Timezone");
     ESP_LOGI(TAG, "📡 BLE Characteristics:");
     ESP_LOGI(TAG, "  - Command: Write commands to device");
     ESP_LOGI(TAG, "  - Response: Read/Notify for command responses");
