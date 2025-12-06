@@ -28,6 +28,7 @@ CMD_GET_SYSTEM_STATUS = 0x02
 CMD_GET_TIMEZONE = 0x10
 CMD_SYNC_TIME = 0x11
 CMD_WIFI_DISCONNECT = 0x12
+CMD_SAVE_WIFI_CONFIG = 0x13
 
 # Response Status
 RESP_STATUS_SUCCESS = 0x00
@@ -243,6 +244,22 @@ class WiFiSetup:
             print("❌ WiFi切断コマンドの送信に失敗しました")
             return False
 
+    async def save_wifi_config(self):
+        """WiFi設定をNVSに保存"""
+        print(f"\n" + "="*60)
+        print("💾 WiFi設定をNVSに保存します...")
+        print("="*60)
+
+        resp = await self.send_command(CMD_SAVE_WIFI_CONFIG)
+
+        if resp["status"] == RESP_STATUS_SUCCESS:
+            print("✅ WiFi設定をNVSに保存しました")
+            print("   デバイス再起動後もこの設定が保持されます")
+            return True
+        else:
+            print("❌ WiFi設定の保存に失敗しました")
+            return False
+
     async def disconnect(self):
         """切断"""
         if self.client and self.client.is_connected:
@@ -355,6 +372,11 @@ async def main():
                         print("\n" + "="*60)
                         print("🎉 WiFi接続に成功しました!")
                         print("="*60)
+
+                        # WiFi設定をNVSに保存
+                        save_now = input("\nWiFi設定をNVSに保存しますか? (再起動後も保持されます) (y/n): ").lower()
+                        if save_now == 'y':
+                            await setup.save_wifi_config()
 
                         # 時刻同期を実行
                         if await setup.sync_time():
