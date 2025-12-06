@@ -91,6 +91,7 @@ typedef enum {
     CMD_GET_WIFI_CONFIG = 0x0E,     // WiFi設定取得
     CMD_WIFI_CONNECT = 0x0F,        // WiFi接続実行
     CMD_GET_TIMEZONE = 0x10,        // タイムゾーン取得
+    CMD_SYNC_TIME = 0x11,           // インターネット時刻同期
 } ble_command_id_t;
 
 typedef enum {

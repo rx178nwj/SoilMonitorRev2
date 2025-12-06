@@ -26,6 +26,7 @@ CMD_GET_WIFI_CONFIG = 0x0E
 CMD_WIFI_CONNECT = 0x0F
 CMD_GET_SYSTEM_STATUS = 0x02
 CMD_GET_TIMEZONE = 0x10
+CMD_SYNC_TIME = 0x11
 
 # Response Status
 RESP_STATUS_SUCCESS = 0x00
@@ -210,6 +211,22 @@ class WiFiSetup:
             print("❌ タイムゾーンの取得に失敗しました")
             return None
 
+    async def sync_time(self):
+        """インターネット時刻同期"""
+        print(f"\n" + "="*60)
+        print("🕒 インターネット時刻同期を開始します...")
+        print("="*60)
+
+        resp = await self.send_command(CMD_SYNC_TIME)
+
+        if resp["status"] == RESP_STATUS_SUCCESS:
+            print("✅ 時刻同期コマンドを送信しました")
+            print("   同期完了までしばらくお待ちください...")
+            return True
+        else:
+            print("❌ 時刻同期コマンドの送信に失敗しました")
+            return False
+
     async def disconnect(self):
         """切断"""
         if self.client and self.client.is_connected:
@@ -321,6 +338,17 @@ async def main():
                     if wifi_connected:
                         print("\n" + "="*60)
                         print("🎉 WiFi接続に成功しました!")
+                        print("="*60)
+
+                        # 時刻同期を実行
+                        if await setup.sync_time():
+                            print("\n⏳ 時刻同期が完了するまで10秒待機します...")
+                            await asyncio.sleep(10)
+                            print("\n再度ステータスを確認し、時刻が同期されたか確認します。")
+                            await setup.check_status()
+
+                        print("\n" + "="*60)
+                        print("✅ すべての処理が完了しました")
                         print("="*60)
                         return 0
 
