@@ -169,6 +169,29 @@ struct ble_response_packet {
 
 ## コマンドリファレンス
 
+### コマンド一覧
+
+| コマンドID | 名称 | 説明 | データ長 |
+|-----------|------|------|----------|
+| 0x01 | CMD_GET_SENSOR_DATA | 最新センサーデータ取得 | 0 |
+| 0x02 | CMD_GET_SYSTEM_STATUS | システムステータス取得 | 0 |
+| 0x03 | CMD_SET_PLANT_PROFILE | 植物プロファイル設定 | 52 |
+| 0x05 | CMD_SYSTEM_RESET | システムリセット | 0 |
+| 0x06 | CMD_GET_DEVICE_INFO | デバイス情報取得 | 0 |
+| 0x0A | CMD_GET_TIME_DATA | 時間指定データ取得 | 44 |
+| 0x0B | CMD_GET_SWITCH_STATUS | スイッチ状態取得 | 0 |
+| 0x0C | CMD_GET_PLANT_PROFILE | 植物プロファイル取得 | 0 |
+| 0x0D | CMD_SET_WIFI_CONFIG | WiFi設定 | 96 |
+| 0x0E | CMD_GET_WIFI_CONFIG | WiFi設定取得 | 0 |
+| 0x0F | CMD_WIFI_CONNECT | WiFi接続実行 | 0 |
+| 0x10 | CMD_GET_TIMEZONE | タイムゾーン取得 | 0 |
+| 0x11 | CMD_SYNC_TIME | インターネット時刻同期 | 0 |
+| 0x12 | CMD_WIFI_DISCONNECT | WiFi切断 | 0 |
+| 0x13 | CMD_SAVE_WIFI_CONFIG | WiFi設定のNVS保存 | 0 |
+| 0x14 | CMD_SAVE_PLANT_PROFILE | 植物プロファイルのNVS保存 | 0 |
+
+---
+
 ### 0x01: CMD_GET_SENSOR_DATA - 最新センサーデータ取得
 
 最新のセンサーデータを取得します。
@@ -527,6 +550,130 @@ if resp["status"] == RESP_STATUS_SUCCESS:
 
 ---
 
+### 0x11: CMD_SYNC_TIME - インターネット時刻同期
+
+インターネット経由でデバイスの時刻を同期します（WiFi接続が必要）。
+
+**コマンド**
+```
+command_id: 0x11
+sequence_num: <任意>
+data_length: 0x0000
+data: (なし)
+```
+
+**レスポンス**
+```
+response_id: 0x11
+status_code: 0x00 (成功) / 0x01 (エラー)
+sequence_num: <対応するシーケンス番号>
+data_length: 0x0000
+data: (なし)
+```
+
+**注意事項**:
+- WiFi接続が必要です（`CMD_WIFI_CONNECT`で事前に接続してください）
+- SNTP (Simple Network Time Protocol) を使用してNTPサーバーから時刻を取得します
+- 時刻同期は非同期で実行されます
+- 同期完了後、`CMD_GET_SYSTEM_STATUS`で`current_time`を確認できます
+
+---
+
+### 0x12: CMD_WIFI_DISCONNECT - WiFi切断
+
+WiFi接続を切断します。
+
+**コマンド**
+```
+command_id: 0x12
+sequence_num: <任意>
+data_length: 0x0000
+data: (なし)
+```
+
+**レスポンス**
+```
+response_id: 0x12
+status_code: 0x00 (成功) / 0x01 (エラー)
+sequence_num: <対応するシーケンス番号>
+data_length: 0x0000
+data: (なし)
+```
+
+**注意事項**:
+- WiFi接続を完全に停止します
+- 切断後は`CMD_WIFI_CONNECT`で再接続できます
+- WiFi設定（SSID/パスワード）は保持されます
+
+---
+
+### 0x13: CMD_SAVE_WIFI_CONFIG - WiFi設定のNVS保存
+
+現在設定されているWiFi設定をNVS（不揮発性ストレージ）に保存します。
+
+**コマンド**
+```
+command_id: 0x13
+sequence_num: <任意>
+data_length: 0x0000
+data: (なし)
+```
+
+**レスポンス**
+```
+response_id: 0x13
+status_code: 0x00 (成功) / 0x01 (エラー)
+sequence_num: <対応するシーケンス番号>
+data_length: 0x0000
+data: (なし)
+```
+
+**注意事項**:
+- 事前に`CMD_SET_WIFI_CONFIG`でWiFi設定を行う必要があります
+- NVSに保存された設定は、デバイス再起動後も保持されます
+- 保存される情報: SSID、パスワード、認証モード
+
+**推奨フロー**:
+1. `CMD_SET_WIFI_CONFIG`でWiFi設定を送信
+2. `CMD_WIFI_CONNECT`で接続テスト
+3. `CMD_GET_SYSTEM_STATUS`で接続を確認
+4. 接続成功後、`CMD_SAVE_WIFI_CONFIG`でNVSに保存
+
+---
+
+### 0x14: CMD_SAVE_PLANT_PROFILE - 植物プロファイルのNVS保存
+
+現在設定されている植物プロファイルをNVS（不揮発性ストレージ）に保存します。
+
+**コマンド**
+```
+command_id: 0x14
+sequence_num: <任意>
+data_length: 0x0000
+data: (なし)
+```
+
+**レスポンス**
+```
+response_id: 0x14
+status_code: 0x00 (成功) / 0x01 (エラー)
+sequence_num: <対応するシーケンス番号>
+data_length: 0x0000
+data: (なし)
+```
+
+**注意事項**:
+- 事前に`CMD_SET_PLANT_PROFILE`でプロファイルを設定する必要があります
+- NVSに保存されたプロファイルは、デバイス再起動後も保持されます
+- 保存される情報: plant_profile_t構造体の全フィールド
+
+**推奨フロー**:
+1. `CMD_SET_PLANT_PROFILE`でプロファイルを設定
+2. `CMD_GET_PLANT_PROFILE`で設定内容を確認
+3. 内容が正しければ`CMD_SAVE_PLANT_PROFILE`でNVSに保存
+
+---
+
 ## 通信例
 
 ### Python実装例（bleak使用）
@@ -706,6 +853,52 @@ class PlantMonitor:
 
         return True
 
+    async def get_timezone(self):
+        """タイムゾーン取得"""
+        resp = await self.send_command(0x10)
+
+        if resp["status"] != 0x00:
+            raise Exception(f"Command failed with status {resp['status']}")
+
+        timezone = resp["data"].decode('utf-8').rstrip('\x00')
+        return timezone
+
+    async def sync_time(self):
+        """インターネット時刻同期"""
+        resp = await self.send_command(0x11)
+
+        if resp["status"] != 0x00:
+            raise Exception(f"Failed to sync time: status {resp['status']}")
+
+        return True
+
+    async def wifi_disconnect(self):
+        """WiFi切断"""
+        resp = await self.send_command(0x12)
+
+        if resp["status"] != 0x00:
+            raise Exception(f"Failed to disconnect WiFi: status {resp['status']}")
+
+        return True
+
+    async def save_wifi_config(self):
+        """WiFi設定をNVSに保存"""
+        resp = await self.send_command(0x13)
+
+        if resp["status"] != 0x00:
+            raise Exception(f"Failed to save WiFi config: status {resp['status']}")
+
+        return True
+
+    async def save_plant_profile(self):
+        """植物プロファイルをNVSに保存"""
+        resp = await self.send_command(0x14)
+
+        if resp["status"] != 0x00:
+            raise Exception(f"Failed to save plant profile: status {resp['status']}")
+
+        return True
+
     async def disconnect(self):
         """切断"""
         if self.client:
@@ -761,6 +954,22 @@ async def main():
         # WiFi接続実行
         await monitor.wifi_connect()
         print("WiFi connection started!")
+
+        # WiFi設定をNVSに保存（再起動後も保持）
+        await monitor.save_wifi_config()
+        print("WiFi config saved to NVS!")
+
+        # タイムゾーン取得
+        timezone = await monitor.get_timezone()
+        print(f"Device timezone: {timezone}")
+
+        # インターネット時刻同期
+        await monitor.sync_time()
+        print("Time synchronized!")
+
+        # 植物プロファイルをNVSに保存
+        await monitor.save_plant_profile()
+        print("Plant profile saved to NVS!")
 
     finally:
         await monitor.disconnect()
