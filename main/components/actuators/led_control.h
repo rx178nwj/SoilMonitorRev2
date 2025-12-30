@@ -38,6 +38,9 @@ esp_err_t led_control_all_off(void);
 // ウェイクアップ表示
 esp_err_t led_control_wakeup_indication(void);
 
+// 起動時LED動作チェック
+esp_err_t led_control_startup_test(void);
+
 // ステータス表示（赤色LED + WS2812B の組み合わせ）
 esp_err_t led_control_show_status(const sensor_status_t *status);
 

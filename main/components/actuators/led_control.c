@@ -174,20 +174,85 @@ esp_err_t led_control_wakeup_indication(void)
         ESP_LOGE(TAG, "LED制御システムが初期化されていません");
         return ESP_ERR_INVALID_STATE;
     }
-    
+
     ESP_LOGI(TAG, "💙 Wakeup indication - Blue LED ON");
-    
+
     esp_err_t ret = led_control_blue_set(true);
     if (ret != ESP_OK) {
         return ret;
     }
-    
+
     vTaskDelay(pdMS_TO_TICKS(1000)); // 1秒間点灯
-    
+
     ret = led_control_blue_set(false);
     ESP_LOGI(TAG, "💙 Blue LED OFF");
-    
+
     return ret;
+}
+
+/**
+ * @brief 起動時LED動作チェック
+ * 赤LED → 青LED → WS2812（赤→緑→黄→青）の順に点灯テスト
+ * @return ESP_OK: 成功, その他: エラー
+ */
+esp_err_t led_control_startup_test(void)
+{
+    if (!g_led_control.initialized) {
+        ESP_LOGE(TAG, "LED制御システムが初期化されていません");
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    ESP_LOGI(TAG, "🔆 起動時LED動作チェック開始");
+
+    const uint32_t delay_ms = 300; // 各LED点灯時間（ミリ秒）
+
+    // テスト用に輝度を一時的に上げる（20%）
+    ws2812_set_brightness(20);
+
+    // 1. 赤色LED点灯
+    ESP_LOGI(TAG, "  ❤️  赤色LED点灯");
+    led_control_red_set(true);
+    vTaskDelay(pdMS_TO_TICKS(delay_ms));
+    led_control_red_set(false);
+    vTaskDelay(pdMS_TO_TICKS(100));
+
+    // 2. 青色LED点灯
+    ESP_LOGI(TAG, "  💙 青色LED点灯");
+    led_control_blue_set(true);
+    vTaskDelay(pdMS_TO_TICKS(delay_ms));
+    led_control_blue_set(false);
+    vTaskDelay(pdMS_TO_TICKS(100));
+
+    // 3. WS2812 - 赤色
+    ESP_LOGI(TAG, "  🔴 WS2812: 赤");
+    ws2812_set_preset_color(WS2812_COLOR_RED);
+    vTaskDelay(pdMS_TO_TICKS(delay_ms));
+
+    // 4. WS2812 - 緑色
+    ESP_LOGI(TAG, "  🟢 WS2812: 緑");
+    ws2812_set_preset_color(WS2812_COLOR_GREEN);
+    vTaskDelay(pdMS_TO_TICKS(delay_ms));
+
+    // 5. WS2812 - 黄色
+    ESP_LOGI(TAG, "  🟡 WS2812: 黄");
+    ws2812_set_preset_color(WS2812_COLOR_YELLOW);
+    vTaskDelay(pdMS_TO_TICKS(delay_ms));
+
+    // 6. WS2812 - 青色
+    ESP_LOGI(TAG, "  🔵 WS2812: 青");
+    ws2812_set_preset_color(WS2812_COLOR_BLUE);
+    vTaskDelay(pdMS_TO_TICKS(delay_ms));
+
+    // 全LED消灯
+    ws2812_clear();
+    vTaskDelay(pdMS_TO_TICKS(100));
+
+    // 輝度を元に戻す（2%）
+    ws2812_set_brightness(WS2812B_BRIGHTNESS);
+
+    ESP_LOGI(TAG, "✅ 起動時LED動作チェック完了");
+
+    return ESP_OK;
 }
 
 /**

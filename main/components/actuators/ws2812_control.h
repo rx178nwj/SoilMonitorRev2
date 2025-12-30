@@ -3,9 +3,10 @@
 
 #include "led_strip.h"
 #include "esp_err.h"
+#include "../common_types.h"
 
 // WS2812B設定
-#define WS2812B_PIN         GPIO_NUM_10  // フルカラーLED
+#define WS2812B_PIN         WS2812_PIN  // フルカラーLED（common_types.hで定義）
 #define WS2812B_LED_COUNT   1           // LED数
 #define WS2812B_BRIGHTNESS  2          // 輝度パーセント（1-100）
 

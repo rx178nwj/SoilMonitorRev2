@@ -39,6 +39,7 @@
 #include "components/sensors/sht30_sensor.h"
 #include "components/sensors/sht40_sensor.h"
 #include "components/sensors/tsl2591_sensor.h"
+#include "components/sensors/fdc1004_sensor.h"
 #include "wifi_manager.h"
 #include "time_sync_manager.h"
 #include "components/sensors/moisture_sensor.h"
@@ -147,7 +148,7 @@ static void read_all_sensors(soil_data_t *data) {
             sum += lux_readings[i];
             count_for_avg++;
         }
-        
+
         if (count_for_avg > 0) {
             data->lux = sum / count_for_avg;
         } else {
@@ -160,6 +161,21 @@ static void read_all_sensors(soil_data_t *data) {
         ESP_LOGE(TAG, "  - TSL2591: Failed to get enough valid readings (%d)", valid_readings);
         data->sensor_error = true;
         data->lux = 0; // エラー時は0を設定
+    }
+
+    // FDC1004静電容量センサーから全チャネル測定
+    fdc1004_data_t fdc1004_data;
+    if (fdc1004_measure_all_channels(&fdc1004_data, FDC1004_RATE_100HZ) == ESP_OK && !fdc1004_data.error) {
+        ESP_LOGI(TAG, "  - FDC1004 CH1: %.3f pF (raw: %ld)",
+                 fdc1004_data.capacitance_ch1, (long)fdc1004_data.raw_ch1);
+        ESP_LOGI(TAG, "  - FDC1004 CH2: %.3f pF (raw: %ld)",
+                 fdc1004_data.capacitance_ch2, (long)fdc1004_data.raw_ch2);
+        ESP_LOGI(TAG, "  - FDC1004 CH3: %.3f pF (raw: %ld)",
+                 fdc1004_data.capacitance_ch3, (long)fdc1004_data.raw_ch3);
+        ESP_LOGI(TAG, "  - FDC1004 CH4: %.3f pF (raw: %ld)",
+                 fdc1004_data.capacitance_ch4, (long)fdc1004_data.raw_ch4);
+    } else {
+        ESP_LOGW(TAG, "  - FDC1004: Failed to read data");
     }
 }
 
@@ -330,12 +346,23 @@ static esp_err_t system_init(void) {
     init_i2c();
     init_gpio();
     led_control_init();
+
+    // 起動時LED動作チェック
+    ESP_LOGI(TAG, "🔆 起動時LED動作チェック実行");
+    led_control_startup_test();
+
 #if HARDWARE_VERSION == 10
     sht30_init();  // Rev1: SHT30センサー初期化
 #else
     sht40_init();  // Rev2: SHT40センサー初期化
 #endif
     tsl2591_init();
+
+    // FDC1004静電容量センサー初期化
+    esp_err_t fdc_ret = fdc1004_init();
+    if (fdc_ret != ESP_OK) {
+        ESP_LOGW(TAG, "FDC1004初期化失敗、スキップします");
+    }
 
     ESP_ERROR_CHECK(plant_manager_init());
     log_plant_profile();

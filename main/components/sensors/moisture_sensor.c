@@ -19,6 +19,7 @@
 #include "driver/i2c.h"
 
 #include "moisture_sensor.h"
+#include "../../common_types.h"
 #include <esp_err.h>
 
 // TAG for logging
@@ -28,9 +29,18 @@ static const char *TAG = "PLANTER_ADC";
 #define ADC_ATTEN           ADC_ATTEN_DB_12 // 12dBの減衰を使用
 #define ADC_BITWIDTH        ADC_BITWIDTH_12 // 12ビットの分解能
 
+// ESP32-C3 ADCチャンネル定義
+// GPIO3 = ADC1_CH3 (Rev2)
+// GPIO2 = ADC1_CH2 (Rev1)
+#if HARDWARE_VERSION == 20
+    #define MOISTURE_ADC_CHANNEL    ADC_CHANNEL_3  // GPIO3 for Rev2
+#else
+    #define MOISTURE_ADC_CHANNEL    ADC_CHANNEL_2  // GPIO2 for Rev1
+#endif
+
 // グローバル変数
 static adc_oneshot_unit_handle_t adc1_handle;
-static adc_cali_handle_t adc1_cali_chan2_handle = NULL;
+static adc_cali_handle_t adc1_cali_moisture_handle = NULL;
 
 // ADC初期化
 void init_adc(void)
@@ -46,27 +56,31 @@ void init_adc(void)
         .bitwidth = ADC_BITWIDTH,
         .atten = ADC_ATTEN,
     };
-    ESP_ERROR_CHECK(adc_oneshot_config_channel(adc1_handle, ADC_CHANNEL_2, &config));
+    ESP_ERROR_CHECK(adc_oneshot_config_channel(adc1_handle, MOISTURE_ADC_CHANNEL, &config));
 
-    // ADCキャリブレーション (ESP32-C3に適合するLine Fitting方式に変更)
-    ESP_LOGI(TAG, "ADC-Calibration: Using Line Fitting");
+    // ADCキャリブレーション (ESP32-C3に適合するCurve Fitting方式を使用)
+    ESP_LOGI(TAG, "ADC-Calibration: Using Curve Fitting for Channel %d", MOISTURE_ADC_CHANNEL);
     adc_cali_curve_fitting_config_t cali_config = {
         .unit_id = ADC_UNIT_1,
         .atten = ADC_ATTEN,
         .bitwidth = ADC_BITWIDTH,
-        // Note: .chan is not a member of line_fitting_config_t
+        // Note: .chan is not a member of curve_fitting_config_t
     };
-    esp_err_t ret = adc_cali_create_scheme_curve_fitting(&cali_config, &adc1_cali_chan2_handle);
+    esp_err_t ret = adc_cali_create_scheme_curve_fitting(&cali_config, &adc1_cali_moisture_handle);
 
     if (ret == ESP_OK) {
-        ESP_LOGI(TAG, "ADC calibration initialized");
+        ESP_LOGI(TAG, "✅ ADC calibration initialized successfully");
     } else if (ret == ESP_ERR_NOT_SUPPORTED) {
-        ESP_LOGW(TAG, "ADC calibration scheme not supported, using raw values");
+        ESP_LOGW(TAG, "⚠️  ADC calibration scheme not supported, using raw values");
     } else {
-        ESP_LOGW(TAG, "ADC calibration failed, using raw values");
+        ESP_LOGW(TAG, "⚠️  ADC calibration failed: %s, using raw values", esp_err_to_name(ret));
     }
-    
-    ESP_LOGI(TAG, "ADC initialized for moisture sensor");
+
+#if HARDWARE_VERSION == 20
+    ESP_LOGI(TAG, "✅ ADC initialized: GPIO3 (ADC1_CH3) - Rev2 Moisture Sensor");
+#else
+    ESP_LOGI(TAG, "✅ ADC initialized: GPIO2 (ADC1_CH2) - Rev1 Moisture Sensor");
+#endif
 }
 
 
@@ -75,18 +89,36 @@ uint16_t read_moisture_sensor(void)
 {
     int adc_raw;
     int voltage = 0;
-    
-    for (int i = 0; i < 10; i++) {
-        ESP_ERROR_CHECK(adc_oneshot_read(adc1_handle, ADC_CHANNEL_2, &adc_raw));
-        
-        if (adc1_cali_chan2_handle) {
+    int sample_count = 10;
+
+    ESP_LOGD(TAG, "🌱 土壌水分センサー読み取り開始 (ADC Channel %d)", MOISTURE_ADC_CHANNEL);
+
+    for (int i = 0; i < sample_count; i++) {
+        esp_err_t ret = adc_oneshot_read(adc1_handle, MOISTURE_ADC_CHANNEL, &adc_raw);
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "❌ ADC読み取りエラー (sample %d/%d): %s", i+1, sample_count, esp_err_to_name(ret));
+            continue;
+        }
+
+        if (adc1_cali_moisture_handle) {
             int vol_mv;
-            ESP_ERROR_CHECK(adc_cali_raw_to_voltage(adc1_cali_chan2_handle, adc_raw, &vol_mv));
-            voltage += vol_mv;
+            ret = adc_cali_raw_to_voltage(adc1_cali_moisture_handle, adc_raw, &vol_mv);
+            if (ret == ESP_OK) {
+                voltage += vol_mv;
+                ESP_LOGD(TAG, "  Sample %d: raw=%d, voltage=%dmV", i+1, adc_raw, vol_mv);
+            } else {
+                ESP_LOGW(TAG, "⚠️  キャリブレーション変換失敗 (sample %d): %s", i+1, esp_err_to_name(ret));
+                voltage += adc_raw; // キャリブレーション失敗時はRAW値を使用
+            }
         } else {
-            voltage += adc_raw; // キャリブレーション失敗時はRAW値を使用
+            voltage += adc_raw; // キャリブレーション未初期化時はRAW値を使用
+            ESP_LOGD(TAG, "  Sample %d: raw=%d (no calibration)", i+1, adc_raw);
         }
         vTaskDelay(pdMS_TO_TICKS(10));
     }
-    return voltage / 10; // 10回平均
+
+    uint16_t average_voltage = voltage / sample_count;
+    ESP_LOGI(TAG, "📊 土壌水分センサー: 平均電圧 = %dmV (%d samples)", average_voltage, sample_count);
+
+    return average_voltage;
 }

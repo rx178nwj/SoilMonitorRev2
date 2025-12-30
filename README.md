@@ -2,7 +2,7 @@
 
 ## 概要
 
-Plant Monitorは、ESP32-C6を使用した植物環境モニタリングシステムです。土壌水分、温度、湿度、照度をセンシングし、BLE (Bluetooth Low Energy)経由でデータを取得できます。
+Plant Monitorは、ESP32-C3を使用した植物環境モニタリングシステムです。土壌水分、温度、湿度、照度をセンシングし、BLE (Bluetooth Low Energy)経由でデータを取得できます。
 
 ### 主な機能
 
@@ -27,7 +27,7 @@ Plant Monitorは、ESP32-C6を使用した植物環境モニタリングシス�
 |-----------|-----|
 | ハードウェアバージョン | Rev2.0 (HARDWARE_VERSION=20) |
 | ソフトウェアバージョン | 2.0.0 |
-| 対応チップ | ESP32-C6 |
+| 対応チップ | ESP32-C3 |
 
 ### GPIO配置 (Rev2)
 
@@ -66,7 +66,7 @@ cp main/wifi_credentials.h.example main/wifi_credentials.h
 ### 2. ターゲット設定
 
 ```bash
-idf.py set-target esp32c6
+idf.py set-target esp32c3
 ```
 
 ### 3. ビルドとフラッシュ
@@ -1144,7 +1144,7 @@ python3 wifi_setup_interactive.py
 ╔══════════════════════════════════════════════════════════════╗
 ║                                                              ║
 ║     PlantMonitor WiFi セットアップツール                     ║
-║     ESP32-C6 対話式設定スクリプト                            ║
+║     ESP32-C3 対話式設定スクリプト                            ║
 ║                                                              ║
 ╚══════════════════════════════════════════════════════════════╝
 
@@ -1236,7 +1236,7 @@ sudo usermod -a -G bluetooth $USER
 1. デバイスが電源投入され、BLEアドバタイジング中か確認
 2. デバイス名が正しいか確認（`PlantMonitor_XX_XXXX`形式）
 3. 他のBLEデバイスとの干渉を確認
-4. ESP32-C6のBLE機能が有効か確認
+4. ESP32-C3のBLE機能が有効か確認
 
 ### レスポンスが返ってこない
 
