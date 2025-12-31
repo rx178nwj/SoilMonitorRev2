@@ -1,10 +1,12 @@
 #include "ds18b20_sensor.h"
 #include "onewire_bus.h"
+#include "onewire_device.h"
 #include "onewire_cmd.h"
 #include "onewire_crc.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include <string.h>
 
 static const char *TAG = "DS18B20";
 
@@ -26,6 +28,30 @@ static onewire_bus_rmt_config_t rmt_config = {
 
 // デバイス情報
 static ds18b20_info_t device_info = {0};
+
+/**
+ * @brief ROM Match コマンド送信（特定デバイス選択）
+ * @param device_addr 64ビットROMアドレス
+ * @return ESP_OK: 成功, その他: エラー
+ */
+static esp_err_t ds18b20_send_rom_match(uint64_t device_addr)
+{
+    esp_err_t ret;
+
+    // Match ROM コマンド (0x55) 送信
+    uint8_t match_cmd = ONEWIRE_CMD_MATCH_ROM;
+    ret = onewire_bus_write_bytes(bus_handle, &match_cmd, 1);
+    if (ret != ESP_OK) {
+        return ret;
+    }
+
+    // 64ビットROMアドレス送信（リトルエンディアン）
+    uint8_t rom_bytes[8];
+    memcpy(rom_bytes, &device_addr, 8);
+    ret = onewire_bus_write_bytes(bus_handle, rom_bytes, 8);
+
+    return ret;
+}
 
 /**
  * @brief DS18B20センサー初期化
@@ -77,7 +103,7 @@ esp_err_t ds18b20_init(void)
 void ds18b20_deinit(void)
 {
     if (bus_handle != NULL) {
-        onewire_del_bus(bus_handle);
+        onewire_bus_del(bus_handle);
         bus_handle = NULL;
         ESP_LOGI(TAG, "DS18B20終了処理完了");
     }
@@ -172,9 +198,8 @@ esp_err_t ds18b20_read_temperature(uint64_t device_addr, float *temperature)
         return ret;
     }
 
-    // デバイス選択
-    onewire_device_t device = {.address = device_addr};
-    ret = onewire_rom_match(bus_handle, device);
+    // デバイス選択（ROM Match）
+    ret = ds18b20_send_rom_match(device_addr);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "デバイス選択失敗: %s", esp_err_to_name(ret));
         return ret;
@@ -198,8 +223,8 @@ esp_err_t ds18b20_read_temperature(uint64_t device_addr, float *temperature)
         return ret;
     }
 
-    // デバイス選択
-    ret = onewire_rom_match(bus_handle, device);
+    // デバイス選択（ROM Match）
+    ret = ds18b20_send_rom_match(device_addr);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "デバイス選択失敗: %s", esp_err_to_name(ret));
         return ret;
@@ -220,7 +245,7 @@ esp_err_t ds18b20_read_temperature(uint64_t device_addr, float *temperature)
     }
 
     // CRCチェック
-    uint8_t crc = onewire_crc8(scratchpad, 8);
+    uint8_t crc = onewire_crc8(0, scratchpad, 8);
     if (crc != scratchpad[8]) {
         ESP_LOGW(TAG, "CRCエラー: 計算値=0x%02X, 受信値=0x%02X", crc, scratchpad[8]);
         return ESP_ERR_INVALID_CRC;
@@ -331,9 +356,8 @@ esp_err_t ds18b20_set_resolution(uint64_t device_addr, ds18b20_resolution_t reso
         return ret;
     }
 
-    // デバイス選択
-    onewire_device_t device = {.address = device_addr};
-    ret = onewire_rom_match(bus_handle, device);
+    // デバイス選択（ROM Match）
+    ret = ds18b20_send_rom_match(device_addr);
     if (ret != ESP_OK) {
         return ret;
     }
