@@ -7,6 +7,7 @@ idf_component_register(SRCS "nvs_config.c" "main.c"
                            "components/sensors/sht40_sensor.c"
                            "components/sensors/tsl2591_sensor.c"
                            "components/sensors/fdc1004_sensor.c"
+                           "components/sensors/ds18b20_sensor.c"
                            "components/actuators/led_control.c"
                            "components/actuators/ws2812_control.c"
                            "components/plant_logic/plant_manager.c"
@@ -30,9 +31,10 @@ idf_component_register(SRCS "nvs_config.c" "main.c"
                          esp_netif
                          esp_event
                          lwip
-                        
+
                          # Driver Components
                          driver
                          esp_adc
                          led_strip
+                         espressif__onewire_bus
                        INCLUDE_DIRS "./include")

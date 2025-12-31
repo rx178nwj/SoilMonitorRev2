@@ -40,6 +40,7 @@
 #include "components/sensors/sht40_sensor.h"
 #include "components/sensors/tsl2591_sensor.h"
 #include "components/sensors/fdc1004_sensor.h"
+#include "components/sensors/ds18b20_sensor.h"
 #include "wifi_manager.h"
 #include "time_sync_manager.h"
 #include "components/sensors/moisture_sensor.h"
@@ -176,6 +177,14 @@ static void read_all_sensors(soil_data_t *data) {
                  fdc1004_data.capacitance_ch4, (long)fdc1004_data.raw_ch4);
     } else {
         ESP_LOGW(TAG, "  - FDC1004: Failed to read data");
+    }
+
+    // DS18B20土壌温度センサー読み取り
+    float soil_temperature;
+    if (ds18b20_read_single_temperature(&soil_temperature) == ESP_OK) {
+        ESP_LOGI(TAG, "  - DS18B20 Soil Temperature: %.2f°C", soil_temperature);
+    } else {
+        ESP_LOGW(TAG, "  - DS18B20: Failed to read temperature");
     }
 }
 
@@ -362,6 +371,12 @@ static esp_err_t system_init(void) {
     esp_err_t fdc_ret = fdc1004_init();
     if (fdc_ret != ESP_OK) {
         ESP_LOGW(TAG, "FDC1004初期化失敗、スキップします");
+    }
+
+    // DS18B20土壌温度センサー初期化
+    esp_err_t ds_ret = ds18b20_init();
+    if (ds_ret != ESP_OK) {
+        ESP_LOGW(TAG, "DS18B20初期化失敗、スキップします");
     }
 
     ESP_ERROR_CHECK(plant_manager_init());
