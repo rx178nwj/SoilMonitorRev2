@@ -76,8 +76,8 @@ typedef struct {
     float temperature;
     float humidity;
     float soil_moisture; // in mV
-    float soil_temperature; // DS18B20 soil temperature in °C
     bool sensor_error;
+    float soil_temperature; // DS18B20 soil temperature in °C
 } soil_data_t;
 
 /* --- soil data structure --- */
