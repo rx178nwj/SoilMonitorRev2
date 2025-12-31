@@ -60,6 +60,7 @@ static void on_reset(int reason);
 
 static esp_err_t process_ble_command(const ble_command_packet_t *cmd_packet, uint8_t *response_buffer, size_t *response_length);
 static esp_err_t handle_get_sensor_data(uint8_t sequence_num, uint8_t *response_buffer, size_t *response_length);
+static esp_err_t handle_get_sensor_data_v2(uint8_t sequence_num, uint8_t *response_buffer, size_t *response_length);
 static esp_err_t handle_get_system_status(uint8_t sequence_num, uint8_t *response_buffer, size_t *response_length);
 static esp_err_t handle_set_plant_profile(const uint8_t *data, uint16_t data_length, uint8_t sequence_num, uint8_t *response_buffer, size_t *response_length);
 static esp_err_t handle_get_plant_profile(uint8_t sequence_num, uint8_t *response_buffer, size_t *response_length);
@@ -182,6 +183,7 @@ static int gatt_svr_access_sensor_data_cb(uint16_t conn_handle, uint16_t attr_ha
         ble_data.humidity = latest_data.humidity;
         ble_data.lux = latest_data.lux;
         ble_data.soil_moisture = latest_data.soil_moisture;
+        ble_data.soil_temperature = latest_data.soil_temperature;
 
         int rc = os_mbuf_append(ctxt->om, &ble_data, sizeof(ble_data));
         if (rc != 0) {
@@ -372,6 +374,9 @@ static esp_err_t process_ble_command(const ble_command_packet_t *cmd_packet,
         case CMD_SAVE_TIMEZONE:
             err = handle_save_timezone(cmd_packet->sequence_num, response_buffer, response_length);
             break;
+        case CMD_GET_SENSOR_DATA_V2:
+            err = handle_get_sensor_data_v2(cmd_packet->sequence_num, response_buffer, response_length);
+            break;
         default: {
             ble_response_packet_t *resp = (ble_response_packet_t *)response_buffer;
             resp->response_id = cmd_packet->command_id;
@@ -408,6 +413,7 @@ static esp_err_t handle_get_sensor_data(uint8_t sequence_num, uint8_t *response_
     latest_data.temperature = minute_data.temperature;
     latest_data.humidity = minute_data.humidity;
     latest_data.soil_moisture = minute_data.soil_moisture;
+    latest_data.soil_temperature = minute_data.soil_temperature;
 
     ble_response_packet_t *resp = (ble_response_packet_t *)response_buffer;
     resp->response_id = CMD_GET_SENSOR_DATA;
@@ -417,6 +423,45 @@ static esp_err_t handle_get_sensor_data(uint8_t sequence_num, uint8_t *response_
 
     memcpy(resp->data, &latest_data, sizeof(soil_data_t));
     *response_length = sizeof(ble_response_packet_t) + sizeof(soil_data_t);
+
+    return ESP_OK;
+}
+
+static esp_err_t handle_get_sensor_data_v2(uint8_t sequence_num, uint8_t *response_buffer, size_t *response_length)
+{
+    soil_data_t latest_data;
+    minute_data_t minute_data;
+
+    esp_err_t ret = data_buffer_get_latest_minute_data(&minute_data);
+    if (ret != ESP_OK) {
+        ble_response_packet_t *resp = (ble_response_packet_t *)response_buffer;
+        resp->response_id = CMD_GET_SENSOR_DATA_V2;
+        resp->status_code = RESP_STATUS_ERROR;
+        resp->sequence_num = sequence_num;
+        resp->data_length = 0;
+        *response_length = sizeof(ble_response_packet_t);
+        return ret;
+    }
+    g_total_sensor_readings++;
+
+    latest_data.datetime = minute_data.timestamp;
+    latest_data.lux = minute_data.lux;
+    latest_data.temperature = minute_data.temperature;
+    latest_data.humidity = minute_data.humidity;
+    latest_data.soil_moisture = minute_data.soil_moisture;
+    latest_data.soil_temperature = minute_data.soil_temperature;
+
+    ble_response_packet_t *resp = (ble_response_packet_t *)response_buffer;
+    resp->response_id = CMD_GET_SENSOR_DATA_V2;
+    resp->status_code = RESP_STATUS_SUCCESS;
+    resp->sequence_num = sequence_num;
+    resp->data_length = sizeof(soil_data_t);
+
+    memcpy(resp->data, &latest_data, sizeof(soil_data_t));
+    *response_length = sizeof(ble_response_packet_t) + sizeof(soil_data_t);
+
+    ESP_LOGI(TAG, "CMD_GET_SENSOR_DATA_V2: temp=%.1f, soil_temp=%.1f, soil=%.0f",
+             latest_data.temperature, latest_data.soil_temperature, latest_data.soil_moisture);
 
     return ESP_OK;
 }

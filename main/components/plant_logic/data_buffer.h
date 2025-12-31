@@ -24,6 +24,7 @@ typedef struct minute_data_t {
     float humidity;          // 湿度 (%)
     float lux;              // 照度 (lux)
     float soil_moisture;     // 土壌水分 (mV)
+    float soil_temperature;  // 土壌温度 (℃) - DS18B20
     bool valid;             // データの有効性
 } minute_data_t;
 
@@ -41,6 +42,9 @@ typedef struct daily_summary_data_t {
     float avg_soil_moisture;           // 平均土壌水分
     float max_soil_moisture;           // 最大土壌水分
     float min_soil_moisture;           // 最小土壌水分
+    float max_soil_temperature;        // 最高土壌温度
+    float min_soil_temperature;        // 最低土壌温度
+    float avg_soil_temperature;        // 平均土壌温度
     uint16_t valid_samples;            // 有効サンプル数
     bool complete;                     // 1日分のデータが完全か
 } daily_summary_data_t;

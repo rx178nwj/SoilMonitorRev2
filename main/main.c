@@ -182,8 +182,10 @@ static void read_all_sensors(soil_data_t *data) {
     // DS18B20土壌温度センサー読み取り
     float soil_temperature;
     if (ds18b20_read_single_temperature(&soil_temperature) == ESP_OK) {
+        data->soil_temperature = soil_temperature;
         ESP_LOGI(TAG, "  - DS18B20 Soil Temperature: %.2f°C", soil_temperature);
     } else {
+        data->soil_temperature = 0.0f; // エラー時は0を設定
         ESP_LOGW(TAG, "  - DS18B20: Failed to read temperature");
     }
 }

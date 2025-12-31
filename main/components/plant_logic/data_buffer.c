@@ -68,16 +68,17 @@ esp_err_t data_buffer_add_minute_data(const soil_data_t *sensor_data) {
     
     // 現在の書き込み位置にデータを格納
     minute_data_t *entry = &g_minute_buffer[g_minute_write_index];
-    
+
     copy_tm_full(&entry->timestamp, &sensor_data->datetime);
     entry->temperature = sensor_data->temperature;
     entry->humidity = sensor_data->humidity;
     entry->lux = sensor_data->lux;
     entry->soil_moisture = sensor_data->soil_moisture;
+    entry->soil_temperature = sensor_data->soil_temperature;
     entry->valid = true;
-    
-    ESP_LOGD(TAG, "Added minute data at index %d: temp=%.1f, humidity=%.1f, soil=%.0f", 
-             g_minute_write_index, entry->temperature, entry->humidity, entry->soil_moisture);
+
+    ESP_LOGD(TAG, "Added minute data at index %d: temp=%.1f, humidity=%.1f, soil=%.0f, soil_temp=%.1f",
+             g_minute_write_index, entry->temperature, entry->humidity, entry->soil_moisture, entry->soil_temperature);
     
     // インデックスを更新（リングバッファ）
     g_minute_write_index = (g_minute_write_index + 1) % DATA_BUFFER_MINUTES_PER_DAY;
@@ -370,33 +371,39 @@ static esp_err_t calculate_daily_summary(const struct tm *date, daily_summary_da
     
     memset(summary, 0, sizeof(daily_summary_data_t));
     copy_tm_date_only(&summary->date, date);
-    
-    float temp_sum = 0, humidity_sum = 0, lux_sum = 0, soil_sum = 0;
+
+    float temp_sum = 0, humidity_sum = 0, lux_sum = 0, soil_sum = 0, soil_temp_sum = 0;
     float min_temp = 999, max_temp = -999;
     float min_soil = 999999, max_soil = -999999;
+    float min_soil_temp = 999, max_soil_temp = -999;
     uint16_t count = 0;
-    
+
     // 指定された日の1分データを集計
     for (int i = 0; i < DATA_BUFFER_MINUTES_PER_DAY; i++) {
         if (g_minute_buffer[i].valid && is_same_day(date, &g_minute_buffer[i].timestamp)) {
             count++;
-            
+
             // 温度
             temp_sum += g_minute_buffer[i].temperature;
             if (g_minute_buffer[i].temperature < min_temp) min_temp = g_minute_buffer[i].temperature;
             if (g_minute_buffer[i].temperature > max_temp) max_temp = g_minute_buffer[i].temperature;
-            
+
             // その他
             humidity_sum += g_minute_buffer[i].humidity;
             lux_sum += g_minute_buffer[i].lux;
             soil_sum += g_minute_buffer[i].soil_moisture;
-            
+
             // 土壌水分
             if (g_minute_buffer[i].soil_moisture < min_soil) min_soil = g_minute_buffer[i].soil_moisture;
             if (g_minute_buffer[i].soil_moisture > max_soil) max_soil = g_minute_buffer[i].soil_moisture;
+
+            // 土壌温度
+            soil_temp_sum += g_minute_buffer[i].soil_temperature;
+            if (g_minute_buffer[i].soil_temperature < min_soil_temp) min_soil_temp = g_minute_buffer[i].soil_temperature;
+            if (g_minute_buffer[i].soil_temperature > max_soil_temp) max_soil_temp = g_minute_buffer[i].soil_temperature;
         }
     }
-    
+
     if (count > 0) {
         summary->avg_temperature = temp_sum / count;
         summary->min_temperature = min_temp;
@@ -406,12 +413,15 @@ static esp_err_t calculate_daily_summary(const struct tm *date, daily_summary_da
         summary->avg_soil_moisture = soil_sum / count;
         summary->min_soil_moisture = min_soil;
         summary->max_soil_moisture = max_soil;
+        summary->avg_soil_temperature = soil_temp_sum / count;
+        summary->min_soil_temperature = min_soil_temp;
+        summary->max_soil_temperature = max_soil_temp;
         summary->valid_samples = count;
         summary->complete = (count >= 1200); // 20時間以上のデータがあれば完全とみなす
-        
-        ESP_LOGD(TAG, "Daily summary calculated: samples=%d, avg_temp=%.1f, avg_soil=%.0f", 
-                 count, summary->avg_temperature, summary->avg_soil_moisture);
-        
+
+        ESP_LOGD(TAG, "Daily summary calculated: samples=%d, avg_temp=%.1f, avg_soil=%.0f, avg_soil_temp=%.1f",
+                 count, summary->avg_temperature, summary->avg_soil_moisture, summary->avg_soil_temperature);
+
         return ESP_OK;
     }
     

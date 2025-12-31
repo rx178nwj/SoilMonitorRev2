@@ -97,6 +97,7 @@ typedef enum {
     CMD_SAVE_PLANT_PROFILE = 0x14,  // 植物プロファイルをNVSに保存
     CMD_SET_TIMEZONE = 0x15,        // タイムゾーン設定
     CMD_SAVE_TIMEZONE = 0x16,       // タイムゾーン設定をNVSに保存
+    CMD_GET_SENSOR_DATA_V2 = 0x17,  // 最新センサーデータ取得（土壌温度含む）
 } ble_command_id_t;
 
 typedef enum {
