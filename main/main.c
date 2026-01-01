@@ -217,9 +217,8 @@ static void sensor_read_task(void* pvParameters) {
 /* --- Timer Callback for Notifications --- */
 static void notify_timer_callback(TimerHandle_t xTimer) {
     if (g_sensor_task_handle != NULL) {
-        BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-        vTaskNotifyGiveFromISR(g_sensor_task_handle, &xHigherPriorityTaskWoken);
-        portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+        // タイマーコールバックはISRではないため、通常のタスク通知を使用
+        xTaskNotifyGive(g_sensor_task_handle);
     }
 }
 
@@ -428,6 +427,9 @@ void app_main(void) {
 
     g_notify_timer = xTimerCreate("notify_timer", pdMS_TO_TICKS(SENSOR_READ_INTERVAL_MS), pdTRUE, NULL, notify_timer_callback);
     xTimerStart(g_notify_timer, 0);
+
+    // 起動直後に初回センサ読み取りを実行
+    xTaskNotifyGive(g_sensor_task_handle);
 
     ESP_LOGI(TAG, "Initialization complete.");
 }
