@@ -90,7 +90,7 @@ esp_err_t fdc1004_check_device_id(uint16_t *device_id)
     return ESP_OK;
 }
 
-// FDC1004測定設定（シングルエンド測定）
+// FDC1004測定設定（シングルエンド測定、SHLD1でシールド）
 esp_err_t fdc1004_configure_single_measurement(
     fdc1004_channel_t channel,
     fdc1004_input_t input,
@@ -107,19 +107,22 @@ esp_err_t fdc1004_configure_single_measurement(
         return ESP_ERR_INVALID_ARG;
     }
 
-    // シングルエンド測定設定
-    // Bit 15-13: CHA (正入力)
-    // Bit 12-10: CHB (負入力、CAPDAC=4を使用)
-    // Bit 9-5: CAPDAC値
+    // シングルエンド測定設定（SHLD1でシールド）
+    // Bit 15-13: CHA (正入力、CIN1-CIN4)
+    // Bit 12-10: CHB (0b111=DISABLED でシングルエンド測定)
+    // Bit 9-5: CAPDAC値（0x00でSHLD1/SHLD2が内部ショート）
     // Bit 4-0: Reserved
+    //
+    // 重要: CHB=DISABLED かつ CAPDAC=0 の場合、SHLD1とSHLD2が内部で
+    // 短絡され、SHLD1のみで全チャネルのシールドが可能になる
     uint16_t config = 0;
-    config |= (input & 0x07) << 13;      // CHA
-    config |= (FDC1004_CAPDAC & 0x07) << 10;  // CHB = CAPDAC
-    config |= (capdac & 0x1F) << 5;      // CAPDAC値
+    config |= (input & 0x07) << 13;           // CHA: 測定対象チャネル
+    config |= (FDC1004_DISABLED & 0x07) << 10; // CHB: 0b111 (DISABLED)
+    config |= (capdac & 0x1F) << 5;           // CAPDAC値（通常0x00）
 
     uint8_t reg_addr = FDC1004_REG_CONF_MEAS1 + channel;
 
-    ESP_LOGD(TAG, "チャネル%d設定: CIN%d, CAPDAC=%d (0x%04X)",
+    ESP_LOGD(TAG, "チャネル%d設定: CIN%d vs GND (SHLD1シールド), CAPDAC=%d (0x%04X)",
              channel + 1, input + 1, capdac, config);
 
     return fdc1004_write_register(reg_addr, config);

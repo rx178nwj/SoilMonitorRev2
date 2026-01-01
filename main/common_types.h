@@ -47,7 +47,7 @@
 #endif
 
 // センシング間隔（ミリ秒）
-#define SENSOR_READ_INTERVAL_MS  60000  // 1分ごとにセンサー読み取り
+#define SENSOR_READ_INTERVAL_MS  1000  // 1分ごとにセンサー読み取り
 
 // センサー閾値
 #define MOISTURE_DRY_THRESHOLD    2000  // 乾燥閾値

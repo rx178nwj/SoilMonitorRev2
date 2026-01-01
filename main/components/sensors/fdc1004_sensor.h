@@ -47,11 +47,12 @@ typedef enum {
 
 // FDC1004入力選択（シングルエンド測定用）
 typedef enum {
-    FDC1004_CIN1 = 0,  // CIN1ピン
-    FDC1004_CIN2 = 1,  // CIN2ピン
-    FDC1004_CIN3 = 2,  // CIN3ピン
-    FDC1004_CIN4 = 3,  // CIN4ピン
-    FDC1004_CAPDAC = 4 // CAPDAC（オフセット補正用）
+    FDC1004_CIN1 = 0,     // CIN1ピン
+    FDC1004_CIN2 = 1,     // CIN2ピン
+    FDC1004_CIN3 = 2,     // CIN3ピン
+    FDC1004_CIN4 = 3,     // CIN4ピン
+    FDC1004_CAPDAC = 4,   // CAPDAC（オフセット補正用）
+    FDC1004_DISABLED = 7  // DISABLED（シングルエンド測定でSHLD1/SHLD2内部ショート用）
 } fdc1004_input_t;
 
 // FDC1004サンプルレート
@@ -87,7 +88,21 @@ esp_err_t fdc1004_init(void);
 // FDC1004デバイスID確認
 esp_err_t fdc1004_check_device_id(uint16_t *device_id);
 
-// FDC1004測定設定（シングルエンド測定）
+/**
+ * @brief FDC1004測定設定（シングルエンド測定、SHLD1でシールド）
+ *
+ * シングルエンド測定（CINn vs GND）を設定します。
+ * CHB=DISABLED (0b111) かつ CAPDAC=0 の設定により、SHLD1とSHLD2が
+ * デバイス内部で短絡され、SHLD1のみで全チャネル（CIN1〜CIN4）の
+ * シールドが可能になります。
+ *
+ * @param channel 測定チャネル (CHANNEL_1〜CHANNEL_4)
+ * @param input 測定対象入力ピン (CIN1〜CIN4)
+ * @param capdac CAPDAC値 (0-31)、通常は0を使用
+ *               0以外を設定するとSHLD2がフローティングになり
+ *               SHLD1のみでシールドできなくなるため注意
+ * @return ESP_OK: 成功, その他: エラー
+ */
 esp_err_t fdc1004_configure_single_measurement(
     fdc1004_channel_t channel,
     fdc1004_input_t input,
@@ -117,7 +132,17 @@ esp_err_t fdc1004_read_raw_capacitance(fdc1004_channel_t channel, int32_t *raw_v
 // FDC1004静電容量値読み取り（pF単位）
 esp_err_t fdc1004_read_capacitance(fdc1004_channel_t channel, float *capacitance, uint8_t capdac);
 
-// FDC1004全チャネル測定（シングルエンド）
+/**
+ * @brief FDC1004全チャネル測定（シングルエンド、SHLD1でシールド）
+ *
+ * 全チャネル（CIN1〜CIN4）をシングルエンド測定で一括測定します。
+ * CAPDAC=0で設定されるため、SHLD1とSHLD2が内部で短絡され、
+ * SHLD1のみで全チャネルのシールドが行われます。
+ *
+ * @param data 測定結果の格納先
+ * @param rate サンプルレート (100Hz, 200Hz, 400Hz)
+ * @return ESP_OK: 成功, その他: エラー
+ */
 esp_err_t fdc1004_measure_all_channels(fdc1004_data_t *data, fdc1004_rate_t rate);
 
 // FDC1004レジスタ読み取り（16-bit）
