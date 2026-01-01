@@ -168,21 +168,19 @@ esp_err_t fdc1004_trigger_measurement(uint8_t channel_mask, fdc1004_rate_t rate)
         return ESP_ERR_INVALID_ARG;
     }
 
-    // FDC Configuration Register構造:
-    // Bit 15: Reserved
-    // Bit 14-12: Reserved
-    // Bit 11-10: RATE (サンプルレート)
+    // FDC Configuration Register構造 (0x0C):
+    // Bit 15-12: Reserved
+    // Bit 11-10: RATE[1:0] (サンプルレート: 00=Reserved, 01=100S/s, 10=200S/s, 11=400S/s)
     // Bit 9: Reserved
-    // Bit 8: REPEAT (0=シングルショット, 1=リピート)
-    // Bit 7: MEAS_4 (チャネル4測定イネーブル)
-    // Bit 6: MEAS_3 (チャネル3測定イネーブル)
-    // Bit 5: MEAS_2 (チャネル2測定イネーブル)
-    // Bit 4: MEAS_1 (チャネル1測定イネーブル)
-    // Bit 3: Reserved
-    // Bit 2: DONE_4 (チャネル4測定完了、読み取り専用)
-    // Bit 1: DONE_3 (チャネル3測定完了、読み取り専用)
-    // Bit 0: DONE_2 (チャネル2測定完了、読み取り専用)
-    // Note: DONE_1はビット位置が異なる場合があるため要確認
+    // Bit 8: REPEAT (0=シングルショット, 1=リピート連続測定)
+    // Bit 7: MEAS_4 (Measurement 4 イネーブル、書き込み)
+    // Bit 6: MEAS_3 (Measurement 3 イネーブル、書き込み)
+    // Bit 5: MEAS_2 (Measurement 2 イネーブル、書き込み)
+    // Bit 4: MEAS_1 (Measurement 1 イネーブル、書き込み)
+    // Bit 3: DONE_4 (Measurement 4 完了フラグ、読み取り専用)
+    // Bit 2: DONE_3 (Measurement 3 完了フラグ、読み取り専用)
+    // Bit 1: DONE_2 (Measurement 2 完了フラグ、読み取り専用)
+    // Bit 0: DONE_1 (Measurement 1 完了フラグ、読み取り専用)
 
     uint16_t config = 0;
     config |= (rate & 0x03) << 10;       // RATE設定
@@ -201,19 +199,30 @@ esp_err_t fdc1004_wait_for_measurement(uint8_t channel_mask, uint32_t timeout_ms
     uint32_t elapsed_ms = 0;
     const uint32_t poll_interval_ms = 5;
 
+    ESP_LOGD(TAG, "測定完了待機開始: チャネルマスク=0x%02X", channel_mask);
+
     while (elapsed_ms < timeout_ms) {
         esp_err_t ret = fdc1004_read_register(FDC1004_REG_FDC_CONF, &status);
         if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "FDC_CONFレジスタ読み取り失敗");
             return ret;
         }
 
-        // DONEビットをチェック（ビット3-0）
-        uint8_t done_bits = (status >> 3) & 0x0F;
+        // DONEビットをチェック（bit[3:0]）
+        // FDC Configuration Register (0x0C):
+        // Bit 3: DONE_4 (Measurement 4 Complete)
+        // Bit 2: DONE_3 (Measurement 3 Complete)
+        // Bit 1: DONE_2 (Measurement 2 Complete)
+        // Bit 0: DONE_1 (Measurement 1 Complete)
+        uint8_t done_bits = status & 0x0F;  // bit[3:0]を直接取得
+
+        ESP_LOGD(TAG, "ポーリング: ステータス=0x%04X, DONE bits=0x%02X, 経過=%lums",
+                 status, done_bits, elapsed_ms);
 
         // 要求されたチャネルの測定が全て完了したか確認
         if ((done_bits & channel_mask) == channel_mask) {
-            ESP_LOGD(TAG, "測定完了: チャネルマスク=0x%02X, ステータス=0x%04X, 経過時間=%lums",
-                     channel_mask, status, elapsed_ms);
+            ESP_LOGD(TAG, "測定完了: チャネルマスク=0x%02X, DONE bits=0x%02X, 経過時間=%lums",
+                     channel_mask, done_bits, elapsed_ms);
             return ESP_OK;
         }
 
@@ -221,8 +230,8 @@ esp_err_t fdc1004_wait_for_measurement(uint8_t channel_mask, uint32_t timeout_ms
         elapsed_ms += poll_interval_ms;
     }
 
-    ESP_LOGW(TAG, "測定タイムアウト: チャネルマスク=0x%02X, 経過時間=%lums",
-             channel_mask, elapsed_ms);
+    ESP_LOGW(TAG, "測定タイムアウト: チャネルマスク=0x%02X, 最終DONE bits=0x%02X, 経過時間=%lums",
+             channel_mask, status & 0x0F, elapsed_ms);
     return ESP_ERR_TIMEOUT;
 }
 
