@@ -133,11 +133,31 @@ esp_err_t fdc1004_read_raw_capacitance(fdc1004_channel_t channel, int32_t *raw_v
 esp_err_t fdc1004_read_capacitance(fdc1004_channel_t channel, float *capacitance, uint8_t capdac);
 
 /**
- * @brief FDC1004全チャネル測定（シングルエンド、SHLD1でシールド）
+ * @brief FDC1004全チャネル測定（シングルエンド、SHLD1でシールド、各チャネル独立測定）
  *
- * 全チャネル（CIN1〜CIN4）をシングルエンド測定で一括測定します。
- * CAPDAC=0で設定されるため、SHLD1とSHLD2が内部で短絡され、
- * SHLD1のみで全チャネルのシールドが行われます。
+ * 全チャネル（CIN1〜CIN4）をシングルエンド測定で独立して測定します。
+ * 各チャネルは以下の4ステップで順次測定されます：
+ *
+ * 1. 測定構成 (Measurement Configuration)
+ *    - 測定レジスタ(0x08-0x0B)にチャネル設定を書き込み
+ *    - CHA: 測定対象ピン指定
+ *    - CHB: DISABLED(0b111)でシングルエンド測定
+ *    - CAPDAC: 0でSHLD1/SHLD2内部ショート
+ *
+ * 2. 測定トリガー (Triggering)
+ *    - FDC構成レジスタ(0x0C)に測定開始コマンド送信
+ *    - 単発測定モード(REPEAT=0)
+ *    - 該当チャネルのみ有効化
+ *
+ * 3. 測定完了待機 (Wait for Completion)
+ *    - DONE_xビットをポーリング
+ *    - タイムアウト100ms
+ *
+ * 4. 測定結果読み取りと計算 (Read and Conversion)
+ *    - データレジスタから24ビット値取得（MSB→LSB順）
+ *    - 容量値計算: (24ビット値 / 2^19) + Coffset
+ *
+ * 各チャネルを独立して測定することでクロストークを防止します。
  *
  * @param data 測定結果の格納先
  * @param rate サンプルレート (100Hz, 200Hz, 400Hz)

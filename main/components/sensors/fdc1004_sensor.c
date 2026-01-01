@@ -312,48 +312,76 @@ esp_err_t fdc1004_measure_all_channels(fdc1004_data_t *data, fdc1004_rate_t rate
     // デフォルトCAPDAC値（オフセット補正なし）
     uint8_t capdac = 0;
 
-    // 全チャネルをシングルエンド測定として設定
-    for (int i = 0; i < 4; i++) {
-        esp_err_t ret = fdc1004_configure_single_measurement(
-            (fdc1004_channel_t)i,
-            (fdc1004_input_t)i,  // CIN1-CIN4
-            capdac
-        );
-        if (ret != ESP_OK) {
-            return ret;
-        }
-    }
-
-    // 全チャネル測定トリガー
-    uint8_t channel_mask = 0x0F;  // 全チャネル (bit 0-3)
-    esp_err_t ret = fdc1004_trigger_measurement(channel_mask, rate);
-    if (ret != ESP_OK) {
-        return ret;
-    }
-
-    // 測定完了待機（タイムアウト: 100ms）
-    ret = fdc1004_wait_for_measurement(channel_mask, 100);
-    if (ret != ESP_OK) {
-        return ret;
-    }
-
-    // 全チャネルのデータ読み取り
+    // 各チャネルを独立して計測（クロストーク防止のため）
     int32_t raw_values[4];
     float capacitances[4];
 
-    for (int i = 0; i < 4; i++) {
-        ret = fdc1004_read_raw_capacitance((fdc1004_channel_t)i, &raw_values[i]);
+    for (int ch = 0; ch < 4; ch++) {
+        ESP_LOGD(TAG, "========== チャネル%d 計測開始 ==========", ch + 1);
+
+        // ステップ1: 測定構成 (Measurement Configuration)
+        // 対応するレジスタ: MEAS1(0x08), MEAS2(0x09), MEAS3(0x0A), MEAS4(0x0B)
+        // CHA: 計測対象ピン (CIN1=b000, CIN2=b001, CIN3=b010, CIN4=b011)
+        // CHB: DISABLED (b111) でシングルエンド測定 (CINn vs GND)
+        // CAPDAC: 0 でSHLD1/SHLD2内部ショート
+        esp_err_t ret = fdc1004_configure_single_measurement(
+            (fdc1004_channel_t)ch,
+            (fdc1004_input_t)ch,  // CIN1-CIN4
+            capdac
+        );
         if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "チャネル%d 測定構成失敗", ch + 1);
+            return ret;
+        }
+        ESP_LOGD(TAG, "ステップ1完了: 測定構成設定 (CIN%d vs GND)", ch + 1);
+
+        // ステップ2: 測定トリガー (Triggering)
+        // FDC構成レジスタ(0x0C)に書き込み
+        // REPEAT=0: 単発測定
+        // MEAS_x=1: 該当チャネルの測定を有効化
+        // RATE: サンプリングレート設定
+        uint8_t channel_mask = (1 << ch);  // 該当チャネルのみ有効化
+        ret = fdc1004_trigger_measurement(channel_mask, rate);
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "チャネル%d 測定トリガー失敗", ch + 1);
+            return ret;
+        }
+        ESP_LOGD(TAG, "ステップ2完了: 測定トリガー送信");
+
+        // ステップ3: 測定完了待機 (Wait for Completion)
+        // レジスタ0x0CのDONE_xビット（bit[3:0]）をポーリング
+        // DONE_x=1になるまで待機（タイムアウト: 100ms）
+        ret = fdc1004_wait_for_measurement(channel_mask, 100);
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "チャネル%d 測定完了待機タイムアウト", ch + 1);
+            return ret;
+        }
+        ESP_LOGD(TAG, "ステップ3完了: 測定完了確認");
+
+        // ステップ4: 測定結果読み取りと計算 (Read and Conversion)
+        // データレジスタから24ビット値を取得
+        // 読み取り順序: 必ずMSB（下位アドレス）→LSB（上位アドレス）
+        // 例: MEAS1なら 0x00(MSB) → 0x01(LSB)
+        ret = fdc1004_read_raw_capacitance((fdc1004_channel_t)ch, &raw_values[ch]);
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "チャネル%d 生データ読み取り失敗", ch + 1);
             return ret;
         }
 
-        ret = fdc1004_read_capacitance((fdc1004_channel_t)i, &capacitances[i], capdac);
+        // 容量値計算: (24ビット値 / 2^19) + Coffset
+        // Coffset = CAPDAC × 3.125pF（今回はCAPDAC=0なのでCoffset=0）
+        ret = fdc1004_read_capacitance((fdc1004_channel_t)ch, &capacitances[ch], capdac);
         if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "チャネル%d 容量値計算失敗", ch + 1);
             return ret;
         }
+        ESP_LOGD(TAG, "ステップ4完了: データ読み取り (raw=%ld, %.3fpF)",
+                 (long)raw_values[ch], capacitances[ch]);
+
+        ESP_LOGI(TAG, "チャネル%d 測定完了: %.3fpF", ch + 1, capacitances[ch]);
     }
 
-    // 構造体に格納
+    // 測定結果を構造体に格納
     data->raw_ch1 = raw_values[0];
     data->raw_ch2 = raw_values[1];
     data->raw_ch3 = raw_values[2];
@@ -366,7 +394,7 @@ esp_err_t fdc1004_measure_all_channels(fdc1004_data_t *data, fdc1004_rate_t rate
 
     data->error = false;
 
-    ESP_LOGI(TAG, "全チャネル測定完了: CH1=%.3fpF, CH2=%.3fpF, CH3=%.3fpF, CH4=%.3fpF",
+    ESP_LOGI(TAG, "全チャネル独立測定完了: CH1=%.3fpF, CH2=%.3fpF, CH3=%.3fpF, CH4=%.3fpF",
              data->capacitance_ch1, data->capacitance_ch2,
              data->capacitance_ch3, data->capacitance_ch4);
 
