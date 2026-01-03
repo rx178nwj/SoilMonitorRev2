@@ -90,15 +90,52 @@ static int compare_floats(const void *a, const void *b) {
 // 全センサーデータ読み取り
 static void read_all_sensors(soil_data_t *data) {
     ESP_LOGI(TAG, "📊 Reading all sensors...");
+
+    // データ構造バージョンを設定
+    data->data_version = DATA_STRUCTURE_VERSION;
+
     struct tm datetime;
     time_sync_manager_get_current_time(&datetime);
     data->datetime = datetime;
     data->sensor_error = false; // エラーフラグを初期化
 
+#if MOISTURE_SENSOR_TYPE == MOISTURE_SENSOR_TYPE_FDC1004
+    // Rev3: FDC1004静電容量センサーを使用
+    fdc1004_data_t fdc_data;
+    if (fdc1004_measure_all_channels(&fdc_data, FDC1004_RATE_100HZ) == ESP_OK) {
+        // CH1の静電容量値を使用（pF単位）
+        data->soil_moisture = fdc_data.capacitance_ch1;
+
+        // 全チャンネルの静電容量データを配列に格納
+        data->soil_moisture_capacitance[0] = fdc_data.capacitance_ch1;
+        data->soil_moisture_capacitance[1] = fdc_data.capacitance_ch2;
+        data->soil_moisture_capacitance[2] = fdc_data.capacitance_ch3;
+        data->soil_moisture_capacitance[3] = fdc_data.capacitance_ch4;
+
+        ESP_LOGI(TAG, "  - FDC1004 CH1: %.3f pF (raw: %d)",
+                 fdc_data.capacitance_ch1, fdc_data.raw_ch1);
+        ESP_LOGI(TAG, "  - FDC1004 CH2: %.3f pF (raw: %d)",
+                 fdc_data.capacitance_ch2, fdc_data.raw_ch2);
+        ESP_LOGI(TAG, "  - FDC1004 CH3: %.3f pF (raw: %d)",
+                 fdc_data.capacitance_ch3, fdc_data.raw_ch3);
+        ESP_LOGI(TAG, "  - FDC1004 CH4: %.3f pF (raw: %d)",
+                 fdc_data.capacitance_ch4, fdc_data.raw_ch4);
+    } else {
+        ESP_LOGE(TAG, "  - FDC1004: Failed to read data");
+        data->soil_moisture = 0.0f;
+        // エラー時は全チャンネルを0に設定
+        for (int i = 0; i < FDC1004_CHANNEL_COUNT; i++) {
+            data->soil_moisture_capacitance[i] = 0.0f;
+        }
+        data->sensor_error = true;
+    }
+#else
+    // Rev1/Rev2: ADCベースの水分センサーを使用
     data->soil_moisture = (float)read_moisture_sensor();
     ESP_LOGI(TAG, "  - Soil Moisture: %.0f mV", data->soil_moisture);
+#endif
 
-#if HARDWARE_VERSION == 10
+#if TEMPARETURE_SENSOR_TYPE == TEMPARETURE_SENSOR_TYPE_SHT30
     // Rev1: SHT30センサーを使用
     sht30_data_t sht30;
     if (sht30_read_data(&sht30) == ESP_OK && !sht30.error) {
@@ -109,8 +146,8 @@ static void read_all_sensors(soil_data_t *data) {
         ESP_LOGE(TAG, "  - SHT30: Failed to read data");
         data->sensor_error = true;
     }
-#else // HARDWARE_VERSION == 20
-    // Rev2: SHT40センサーを使用
+#elif TEMPARETURE_SENSOR_TYPE == TEMPARETURE_SENSOR_TYPE_SHT40// HARDWARE_VERSION == 20 or HARDWARE_VERSION == 30
+    // Rev2/Rev3: SHT40センサーを使用
     sht40_data_t sht40;
     if (sht40_read_data(&sht40) == ESP_OK && !sht40.error) {
         data->temperature = sht40.temperature;
@@ -118,6 +155,8 @@ static void read_all_sensors(soil_data_t *data) {
         ESP_LOGI(TAG, "  - SHT40: Temp=%.1f C, Hum=%.1f %%", data->temperature, data->humidity);
     } else {
         ESP_LOGE(TAG, "  - SHT40: Failed to read data");
+        data->temperature = 0.0f;  // デフォルト値を設定
+        data->humidity = 0.0f;     // デフォルト値を設定
         data->sensor_error = true;
     }
 #endif
@@ -164,30 +203,37 @@ static void read_all_sensors(soil_data_t *data) {
         data->lux = 0; // エラー時は0を設定
     }
 
-    // FDC1004静電容量センサーから全チャネル測定
-    fdc1004_data_t fdc1004_data;
-    if (fdc1004_measure_all_channels(&fdc1004_data, FDC1004_RATE_100HZ) == ESP_OK && !fdc1004_data.error) {
-        ESP_LOGI(TAG, "  - FDC1004 CH1: %.3f pF (raw: %ld)",
-                 fdc1004_data.capacitance_ch1, (long)fdc1004_data.raw_ch1);
-        ESP_LOGI(TAG, "  - FDC1004 CH2: %.3f pF (raw: %ld)",
-                 fdc1004_data.capacitance_ch2, (long)fdc1004_data.raw_ch2);
-        ESP_LOGI(TAG, "  - FDC1004 CH3: %.3f pF (raw: %ld)",
-                 fdc1004_data.capacitance_ch3, (long)fdc1004_data.raw_ch3);
-        ESP_LOGI(TAG, "  - FDC1004 CH4: %.3f pF (raw: %ld)",
-                 fdc1004_data.capacitance_ch4, (long)fdc1004_data.raw_ch4);
+#if HARDWARE_VERSION == 30 // Rev3: 土壌温度センサー1と2を読み取り
+    // 土壌温度センサー1の読み取り
+#if SOIL_TEMPERATURE1_SENSOR_TYPE == SOIL_TEMPERATURE_SENSOR_DS18B20
+    float soil_temp1;
+    if (ds18b20_read_single_temperature(&soil_temp1) == ESP_OK) {
+        data->soil_temperature1 = soil_temp1;
+        ESP_LOGI(TAG, "  - DS18B20 Soil Temperature 1: %.2f°C", soil_temp1);
     } else {
-        ESP_LOGW(TAG, "  - FDC1004: Failed to read data");
+        data->soil_temperature1 = 0.0f; // エラー時は0を設定
+        ESP_LOGW(TAG, "  - DS18B20: Failed to read temperature 1");
     }
+#elif SOIL_TEMPERATURE1_SENSOR_TYPE == SOIL_TEMPERATURE_SENSOR_NONE
+    data->soil_temperature1 = 0.0f;
+    ESP_LOGD(TAG, "  - Soil Temperature 1: Not configured");
+#endif
 
-    // DS18B20土壌温度センサー読み取り
-    float soil_temperature;
-    if (ds18b20_read_single_temperature(&soil_temperature) == ESP_OK) {
-        data->soil_temperature = soil_temperature;
-        ESP_LOGI(TAG, "  - DS18B20 Soil Temperature: %.2f°C", soil_temperature);
+    // 土壌温度センサー2の読み取り
+#if SOIL_TEMPERATURE2_SENSOR_TYPE == SOIL_TEMPERATURE_SENSOR_DS18B20
+    float soil_temp2;
+    if (ds18b20_read_single_temperature(&soil_temp2) == ESP_OK) {
+        data->soil_temperature2 = soil_temp2;
+        ESP_LOGI(TAG, "  - DS18B20 Soil Temperature 2: %.2f°C", soil_temp2);
     } else {
-        data->soil_temperature = 0.0f; // エラー時は0を設定
-        ESP_LOGW(TAG, "  - DS18B20: Failed to read temperature");
+        data->soil_temperature2 = 0.0f; // エラー時は0を設定
+        ESP_LOGW(TAG, "  - DS18B20: Failed to read temperature 2");
     }
+#elif SOIL_TEMPERATURE2_SENSOR_TYPE == SOIL_TEMPERATURE_SENSOR_NONE
+    data->soil_temperature2 = 0.0f;
+    ESP_LOGD(TAG, "  - Soil Temperature 2: Not configured");
+#endif
+#endif // HARDWARE_VERSION == 30
 }
 
 /* --- GPIO Initialization --- */
@@ -361,9 +407,9 @@ static esp_err_t system_init(void) {
     ESP_LOGI(TAG, "🔆 起動時LED動作チェック実行");
     led_control_startup_test();
 
-#if HARDWARE_VERSION == 10
+#if TEMPARETURE_SENSOR_TYPE == TEMPARETURE_SENSOR_TYPE_SHT30
     sht30_init();  // Rev1: SHT30センサー初期化
-#else
+#elif TEMPARETURE_SENSOR_TYPE == TEMPARETURE_SENSOR_TYPE_SHT40
     sht40_init();  // Rev2: SHT40センサー初期化
 #endif
     tsl2591_init();
@@ -416,14 +462,18 @@ void app_main(void) {
     ESP_LOGI(TAG, "✅ Power management configured (auto light-sleep with BLE modem-sleep)");
 #endif
 
+#if CONFIG_WIFI_ENABLED
     ESP_LOGI(TAG, "WiFi機能を初期化中（BLE経由で設定可能）");
     // WiFi管理システムの初期化のみ（自動接続はしない）
     ESP_ERROR_CHECK(wifi_manager_init(wifi_status_callback));
     ESP_ERROR_CHECK(time_sync_manager_init(time_sync_callback));
     // 注意: wifi_manager_start()はBLE経由で呼び出されます（CMD_WIFI_CONNECT）
+#else
+    ESP_LOGI(TAG, "ℹ️  WiFi機能は無効化されています (CONFIG_WIFI_ENABLED=0)");
+#endif
 
     xTaskCreate(sensor_read_task, "sensor_read", 4096, NULL, 5, &g_sensor_task_handle);
-    xTaskCreate(status_analysis_task, "analysis_task", 6144, NULL, 4, &g_analysis_task_handle);
+    xTaskCreate(status_analysis_task, "analysis_task", 8192, NULL, 4, &g_analysis_task_handle);
 
     g_notify_timer = xTimerCreate("notify_timer", pdMS_TO_TICKS(SENSOR_READ_INTERVAL_MS), pdTRUE, NULL, notify_timer_callback);
     xTimerStart(g_notify_timer, 0);

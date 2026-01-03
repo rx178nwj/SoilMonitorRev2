@@ -24,7 +24,11 @@ typedef struct minute_data_t {
     float humidity;          // 湿度 (%)
     float lux;              // 照度 (lux)
     float soil_moisture;     // 土壌水分 (mV)
-    float soil_temperature;  // 土壌温度 (℃) - DS18B20
+    float soil_temperature1;  // 土壌温度 (℃)
+    float soil_temperature2;  // 土壌温度 (℃)
+#if HARDWARE_VERSION == 30
+    float soil_moisture_capacitance[FDC1004_CHANNEL_COUNT]; // 土壌湿度計測用静電容量 (pF)
+#endif
     bool valid;             // データの有効性
 } minute_data_t;
 

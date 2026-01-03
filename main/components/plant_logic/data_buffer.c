@@ -74,12 +74,21 @@ esp_err_t data_buffer_add_minute_data(const soil_data_t *sensor_data) {
     entry->humidity = sensor_data->humidity;
     entry->lux = sensor_data->lux;
     entry->soil_moisture = sensor_data->soil_moisture;
-    entry->soil_temperature = sensor_data->soil_temperature;
+    entry->soil_temperature1 = sensor_data->soil_temperature1;
+    entry->soil_temperature2 = sensor_data->soil_temperature2;
+
+#if HARDWARE_VERSION == 30
+    // FDC1004静電容量データをコピー
+    for (int i = 0; i < FDC1004_CHANNEL_COUNT; i++) {
+        entry->soil_moisture_capacitance[i] = sensor_data->soil_moisture_capacitance[i];
+    }
+#endif
+
     entry->valid = true;
 
-    ESP_LOGD(TAG, "Added minute data at index %d: temp=%.1f, humidity=%.1f, soil=%.0f, soil_temp=%.1f",
-             g_minute_write_index, entry->temperature, entry->humidity, entry->soil_moisture, entry->soil_temperature);
-    
+    ESP_LOGD(TAG, "Added minute data at index %d: temp=%.1f, humidity=%.1f, soil=%.0f, soil_temp1=%.1f, soil_temp2=%.1f",
+             g_minute_write_index, entry->temperature, entry->humidity, entry->soil_moisture, entry->soil_temperature1, entry->soil_temperature2);
+
     // インデックスを更新（リングバッファ）
     g_minute_write_index = (g_minute_write_index + 1) % DATA_BUFFER_MINUTES_PER_DAY;
     
@@ -397,10 +406,10 @@ static esp_err_t calculate_daily_summary(const struct tm *date, daily_summary_da
             if (g_minute_buffer[i].soil_moisture < min_soil) min_soil = g_minute_buffer[i].soil_moisture;
             if (g_minute_buffer[i].soil_moisture > max_soil) max_soil = g_minute_buffer[i].soil_moisture;
 
-            // 土壌温度
-            soil_temp_sum += g_minute_buffer[i].soil_temperature;
-            if (g_minute_buffer[i].soil_temperature < min_soil_temp) min_soil_temp = g_minute_buffer[i].soil_temperature;
-            if (g_minute_buffer[i].soil_temperature > max_soil_temp) max_soil_temp = g_minute_buffer[i].soil_temperature;
+            // 土壌温度（soil_temperature1を使用）
+            soil_temp_sum += g_minute_buffer[i].soil_temperature1;
+            if (g_minute_buffer[i].soil_temperature1 < min_soil_temp) min_soil_temp = g_minute_buffer[i].soil_temperature1;
+            if (g_minute_buffer[i].soil_temperature1 > max_soil_temp) max_soil_temp = g_minute_buffer[i].soil_temperature1;
         }
     }
 

@@ -7,9 +7,10 @@ Plant Monitorは、ESP32-C3を使用した植物環境モニタリングシス�
 ### 主な機能
 
 - **センサーモニタリング**
-  - 土壌水分センサー (ADC)
+  - 土壌水分センサー (ADC / 静電容量 FDC1004)
   - 温湿度センサー (SHT40)
   - 照度センサー (TSL2591)
+  - 土壌温度センサー (DS18B20)
 - **データ保存**
   - 1分ごとのセンサーデータを24時間分保存
   - NVSへの植物プロファイル保存
@@ -21,15 +22,30 @@ Plant Monitorは、ESP32-C3を使用した植物環境モニタリングシス�
   - WS2812フルカラーLEDで植物状態を表示
   - ステータスLED（青色/赤色）
 
+### 最近の主な変更 (v3.0.0)
+
+*   **ハードウェア Rev3 のサポート:**
+    *   新しいハードウェアリビジョン(Rev3)に対応しました。
+    *   土壌水分センサーとして、従来の抵抗式ADCセンサーに加え、高精度な静電容量センサー(FDC1004)をサポートしました。
+    *   最大2つの土壌温度センサー(DS18B20)を接続できるようになりました。
+*   **データ構造の更新 (v2):**
+    *   ハードウェア Rev3 の新機能（静電容量、複数温度センサー）に対応するため、BLE通信および内部データ保存用のデータ構造を更新しました。
+    *   下位互換性のため、`data_version` フィールドを追加し、アプリケーション側でデータ構造を識別できるようにしました。
+*   **センサー読み取り処理の改善:**
+    *   FDC1004静電容量センサーの読み取りロジックを改善し、4チャンネルすべての値をより安定して独立に取得できるようになりました。
+    *   SHT40温湿度センサーの読み取り安定性を向上させました。
+*   **BLE通信の機能強化:**
+    *   新しいデータ構造に対応し、静電容量や複数の土壌温度データをBLE経由で取得できるようになりました。
+
 ## ハードウェア情報
 
 | パラメータ | 値 |
 |-----------|-----|
-| ハードウェアバージョン | Rev2.0 (HARDWARE_VERSION=20) |
-| ソフトウェアバージョン | 2.0.0 |
+| ハードウェアバージョン | Rev3.0 (HARDWARE_VERSION=30) |
+| ソフトウェアバージョン | 3.0.0 |
 | 対応チップ | ESP32-C3 |
 
-### GPIO配置 (Rev2)
+### GPIO配置 (Rev3)
 
 | 機能 | GPIO |
 |------|------|
@@ -191,6 +207,7 @@ struct ble_response_packet {
 | 0x14 | CMD_SAVE_PLANT_PROFILE | 植物プロファイルのNVS保存 | 0 |
 | 0x15 | CMD_SET_TIMEZONE | タイムゾーン設定 | 可変 |
 | 0x16 | CMD_SAVE_TIMEZONE | タイムゾーン設定のNVS保存 | 0 |
+| 0x17 | CMD_GET_SENSOR_DATA_V2 | 最新センサーデータ取得（拡張版） | 0 |
 
 ---
 
@@ -207,17 +224,43 @@ data: (なし)
 ```
 
 **レスポンス**
+
+レスポンスデータは、デバイスのハードウェアバージョンによって構造が異なります。
+先頭1バイトの `data_version` を確認して、それに続くデータを解釈してください。
+
+**`data_version == 1` (旧バージョン / Rev1, Rev2)**
 ```c
-struct soil_data {
-    struct tm datetime;       // タイムスタンプ（44バイト）
+// soil_data_v1
+struct {
+    uint8_t data_version;     // == 1
+    struct tm datetime;       // タイムスタンプ（36バイト）
     float lux;                // 照度 [lux]
     float temperature;        // 温度 [°C]
     float humidity;           // 湿度 [%]
     float soil_moisture;      // 土壌水分 [mV]
+    bool sensor_error;        // センサーエラー
+    float soil_temperature;   // 土壌温度 [°C]
 } __attribute__((packed));
 ```
+**合計サイズ**: 55バイト
 
-**サイズ**: 60バイト
+**`data_version == 2` (現行バージョン / Rev3)**
+```c
+// soil_data_v2
+struct {
+    uint8_t data_version;     // == 2
+    struct tm datetime;       // タイムスタンプ（36バイト）
+    float lux;                // 照度 [lux]
+    float temperature;        // 温度 [°C]
+    float humidity;           // 湿度 [%]
+    float soil_moisture;      // 土壌水分 [mV] (ADC) or [pF] (FDC1004)
+    bool sensor_error;        // センサーエラー
+    float soil_temperature1;  // 土壌温度1 [°C]
+    float soil_temperature2;  // 土壌温度2 [°C]
+    float soil_moisture_capacitance[4]; // 静電容量 [pF] (4ch分)
+} __attribute__((packed));
+```
+**合計サイズ**: 79バイト
 
 **struct tm構造**
 ```c
@@ -231,7 +274,7 @@ struct tm {
     int tm_wday;     // 曜日 (0-6, 日曜=0)
     int tm_yday;     // 年内通算日 (0-365)
     int tm_isdst;    // 夏時間フラグ
-};
+}; // 合計 36バイト (int = 4バイトの場合)
 ```
 
 ---
@@ -381,34 +424,52 @@ struct device_info {
 指定した時刻のセンサーデータを取得します（24時間分のバッファから検索）。
 
 **コマンド**
-```
-command_id: 0x0A
-sequence_num: <任意>
-data_length: 44 (sizeof(time_data_request_t))
-data: <time_data_request_t構造体>
-```
-
-**time_data_request_t構造**
 ```c
-struct time_data_request {
-    struct tm requested_time;  // 取得したい時刻
+// time_data_request_t
+struct {
+    struct tm requested_time;  // 取得したい時刻 (36バイト)
 } __attribute__((packed));
 ```
+- **`command_id`**: `0x0A`
+- **`data_length`**: 36
+- **`data`**: `time_data_request_t` 構造体
 
 **レスポンス**
+
+レスポンスデータは、デバイスのハードウェアバージョンによって構造が異なります。
+先頭1バイトの `data_version` を確認して、それに続くデータを解釈してください。
+データが見つからない場合、`status_code`が`RESP_STATUS_ERROR` (0x01) になります。
+
+**`data_version == 1` (旧バージョン / Rev1, Rev2)**
 ```c
-struct time_data_response {
-    struct tm actual_time;     // 実際に見つかったデータの時刻
-    float temperature;         // 温度 [°C]
-    float humidity;            // 湿度 [%]
-    float lux;                 // 照度 [lux]
-    float soil_moisture;       // 土壌水分 [mV]
+// time_data_response_v1
+struct {
+    uint8_t data_version;     // == 1
+    struct tm actual_time;    // 実際に見つかったデータの時刻 (36バイト)
+    float temperature;        // 温度 [°C]
+    float humidity;           // 湿度 [%]
+    float lux;                // 照度 [lux]
+    float soil_moisture;      // 土壌水分 [mV]
 } __attribute__((packed));
 ```
+**合計サイズ**: 53バイト
 
-**サイズ**: 60バイト
-
-データが見つからない場合、`status_code`が`RESP_STATUS_ERROR`になります。
+**`data_version == 2` (現行バージョン / Rev3)**
+```c
+// time_data_response_v2
+struct {
+    uint8_t data_version;     // == 2
+    struct tm actual_time;    // 実際に見つかったデータの時刻 (36バイト)
+    float temperature;        // 温度 [°C]
+    float humidity;           // 湿度 [%]
+    float lux;                // 照度 [lux]
+    float soil_moisture;      // 土壌水分 [mV] or [pF]
+    float soil_temperature1;  // 土壌温度1 [°C]
+    float soil_temperature2;  // 土壌温度2 [°C]
+    float soil_moisture_capacitance[4]; // 静電容量 [pF] (4ch分)
+} __attribute__((packed));
+```
+**合計サイズ**: 77バイト
 
 ---
 

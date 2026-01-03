@@ -325,69 +325,93 @@ esp_err_t fdc1004_measure_all_channels(fdc1004_data_t *data, fdc1004_rate_t rate
     int32_t raw_values[4];
     float capacitances[4];
 
-    for (int ch = 0; ch < 4; ch++) {
-        ESP_LOGD(TAG, "========== チャネル%d 計測開始 ==========", ch + 1);
+    // 各CINピンを独立測定
+    // Measurement 1でCIN1, Measurement 2でCIN2, Measurement 3でCIN3, Measurement 4でCIN4を測定
+    for (int cin_pin = 0; cin_pin < 4; cin_pin++) {
+        // measurement_slotとcin_pinは同じ値だが、概念的に区別する
+        fdc1004_channel_t measurement_slot = (fdc1004_channel_t)cin_pin;
+        fdc1004_input_t input_pin = (fdc1004_input_t)cin_pin;
+
+        ESP_LOGD(TAG, "========== CIN%d 計測開始 (Measurement %d使用) ==========",
+                 cin_pin + 1, measurement_slot + 1);
 
         // ステップ1: 測定構成 (Measurement Configuration)
-        // 対応するレジスタ: MEAS1(0x08), MEAS2(0x09), MEAS3(0x0A), MEAS4(0x0B)
+        // Measurement X のレジスタ(0x08+X)に、CIN X を測定するよう設定
         // CHA: 計測対象ピン (CIN1=b000, CIN2=b001, CIN3=b010, CIN4=b011)
         // CHB: DISABLED (b111) でシングルエンド測定 (CINn vs GND)
         // CAPDAC: 0 でSHLD1/SHLD2内部ショート
         esp_err_t ret = fdc1004_configure_single_measurement(
-            (fdc1004_channel_t)ch,
-            (fdc1004_input_t)ch,  // CIN1-CIN4
+            measurement_slot,  // Measurementレジスタ番号 (0x08-0x0B)
+            input_pin,         // 測定するCINピン番号 (CIN1-CIN4)
             capdac
         );
         if (ret != ESP_OK) {
-            ESP_LOGE(TAG, "チャネル%d 測定構成失敗", ch + 1);
+            ESP_LOGE(TAG, "CIN%d (Measurement %d) 測定構成失敗", cin_pin + 1, measurement_slot + 1);
             return ret;
         }
-        ESP_LOGD(TAG, "ステップ1完了: 測定構成設定 (CIN%d vs GND)", ch + 1);
+        ESP_LOGD(TAG, "ステップ1完了: Measurement %d に CIN%d vs GND を設定",
+                 measurement_slot + 1, input_pin + 1);
 
         // ステップ2: 測定トリガー (Triggering)
-        // FDC構成レジスタ(0x0C)に書き込み
+        // FDC構成レジスタ(0x0C)のMEAS_xビット(bit[7:4])で該当Measurementを有効化
         // REPEAT=0: 単発測定
-        // MEAS_x=1: 該当チャネルの測定を有効化
         // RATE: サンプリングレート設定
-        uint8_t channel_mask = (1 << ch);  // 該当チャネルのみ有効化
+        uint8_t channel_mask = (1 << measurement_slot);  // 該当Measurementのみ有効化
         ret = fdc1004_trigger_measurement(channel_mask, rate);
         if (ret != ESP_OK) {
-            ESP_LOGE(TAG, "チャネル%d 測定トリガー失敗", ch + 1);
+            ESP_LOGE(TAG, "CIN%d (Measurement %d) 測定トリガー失敗", cin_pin + 1, measurement_slot + 1);
             return ret;
         }
-        ESP_LOGD(TAG, "ステップ2完了: 測定トリガー送信");
+        ESP_LOGD(TAG, "ステップ2完了: Measurement %d トリガー送信", measurement_slot + 1);
 
         // ステップ3: 測定完了待機 (Wait for Completion)
         // レジスタ0x0CのDONE_xビット（bit[3:0]）をポーリング
         // DONE_x=1になるまで待機（タイムアウト: 100ms）
         ret = fdc1004_wait_for_measurement(channel_mask, 100);
         if (ret != ESP_OK) {
-            ESP_LOGE(TAG, "チャネル%d 測定完了待機タイムアウト", ch + 1);
+            ESP_LOGE(TAG, "CIN%d (Measurement %d) 測定完了待機タイムアウト", cin_pin + 1, measurement_slot + 1);
             return ret;
         }
-        ESP_LOGD(TAG, "ステップ3完了: 測定完了確認");
+        ESP_LOGD(TAG, "ステップ3完了: Measurement %d 完了確認", measurement_slot + 1);
 
         // ステップ4: 測定結果読み取りと計算 (Read and Conversion)
-        // データレジスタから24ビット値を取得
+        // Measurement X のデータレジスタ(0x00+X*2, 0x01+X*2)から24ビット値を取得
         // 読み取り順序: 必ずMSB（下位アドレス）→LSB（上位アドレス）
-        // 例: MEAS1なら 0x00(MSB) → 0x01(LSB)
-        ret = fdc1004_read_raw_capacitance((fdc1004_channel_t)ch, &raw_values[ch]);
+        // 例: Measurement 1なら 0x00(MSB) → 0x01(LSB)
+        //     Measurement 3なら 0x04(MSB) → 0x05(LSB)
+        ret = fdc1004_read_raw_capacitance(measurement_slot, &raw_values[cin_pin]);
         if (ret != ESP_OK) {
-            ESP_LOGE(TAG, "チャネル%d 生データ読み取り失敗", ch + 1);
+            ESP_LOGE(TAG, "CIN%d (Measurement %d) 生データ読み取り失敗", cin_pin + 1, measurement_slot + 1);
             return ret;
         }
 
         // 容量値計算: (24ビット値 / 2^19) + Coffset
         // Coffset = CAPDAC × 3.125pF（今回はCAPDAC=0なのでCoffset=0）
-        ret = fdc1004_read_capacitance((fdc1004_channel_t)ch, &capacitances[ch], capdac);
+        ret = fdc1004_read_capacitance(measurement_slot, &capacitances[cin_pin], capdac);
         if (ret != ESP_OK) {
-            ESP_LOGE(TAG, "チャネル%d 容量値計算失敗", ch + 1);
+            ESP_LOGE(TAG, "CIN%d (Measurement %d) 容量値計算失敗", cin_pin + 1, measurement_slot + 1);
             return ret;
         }
-        ESP_LOGD(TAG, "ステップ4完了: データ読み取り (raw=%ld, %.3fpF)",
-                 (long)raw_values[ch], capacitances[ch]);
+        ESP_LOGD(TAG, "ステップ4完了: CIN%d データ読み取り (raw=%ld, %.3fpF)",
+                 cin_pin + 1, (long)raw_values[cin_pin], capacitances[cin_pin]);
 
-        ESP_LOGI(TAG, "チャネル%d 測定完了: %.3fpF", ch + 1, capacitances[ch]);
+        // ステップ5: FDC_CONFレジスタをクリア（重要：次の測定との干渉を防ぐ）
+        // データシート page 14: 一度に1つのMeasurementのみトリガー可能
+        // MEAS_xビットが残っていると次の測定に干渉する（特にCN3→CN4で問題発生）
+        ret = fdc1004_write_register(FDC1004_REG_FDC_CONF, 0x0000);
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "CIN%d (Measurement %d) FDC_CONFレジスタクリア失敗",
+                     cin_pin + 1, measurement_slot + 1);
+            return ret;
+        }
+        ESP_LOGD(TAG, "ステップ5完了: Measurement %d クリア、レジスタリセット",
+                 measurement_slot + 1);
+
+        // ハードウェア安定化のための短い待機（10ms）
+        vTaskDelay(pdMS_TO_TICKS(10));
+
+        ESP_LOGI(TAG, "CIN%d 測定完了: %.3fpF (Measurement %d 使用)",
+                 cin_pin + 1, capacitances[cin_pin], measurement_slot + 1);
     }
 
     // 測定結果を構造体に格納

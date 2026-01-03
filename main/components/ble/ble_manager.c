@@ -170,6 +170,9 @@ static int gatt_svr_access_sensor_data_cb(uint16_t conn_handle, uint16_t attr_ha
         }
 
         soil_ble_data_t ble_data;
+        // データ構造バージョンを設定
+        ble_data.data_version = DATA_STRUCTURE_VERSION;
+
         ble_data.datetime.tm_sec = latest_data.timestamp.tm_sec;
         ble_data.datetime.tm_min = latest_data.timestamp.tm_min;
         ble_data.datetime.tm_hour = latest_data.timestamp.tm_hour;
@@ -183,7 +186,14 @@ static int gatt_svr_access_sensor_data_cb(uint16_t conn_handle, uint16_t attr_ha
         ble_data.humidity = latest_data.humidity;
         ble_data.lux = latest_data.lux;
         ble_data.soil_moisture = latest_data.soil_moisture;
-        ble_data.soil_temperature = latest_data.soil_temperature;
+#if HARDWARE_VERSION == 30
+        ble_data.soil_temperature1 = latest_data.soil_temperature1;
+        ble_data.soil_temperature2 = latest_data.soil_temperature2;
+        // FDC1004静電容量データをコピー
+        for (int i = 0; i < FDC1004_CHANNEL_COUNT; i++) {
+            ble_data.soil_moisture_capacitance[i] = latest_data.soil_moisture_capacitance[i];
+        }
+#endif
 
         int rc = os_mbuf_append(ctxt->om, &ble_data, sizeof(ble_data));
         if (rc != 0) {
@@ -413,7 +423,8 @@ static esp_err_t handle_get_sensor_data(uint8_t sequence_num, uint8_t *response_
     latest_data.temperature = minute_data.temperature;
     latest_data.humidity = minute_data.humidity;
     latest_data.soil_moisture = minute_data.soil_moisture;
-    latest_data.soil_temperature = minute_data.soil_temperature;
+    latest_data.soil_temperature1 = minute_data.soil_temperature1;
+    latest_data.soil_temperature2 = minute_data.soil_temperature2;
 
     ble_response_packet_t *resp = (ble_response_packet_t *)response_buffer;
     resp->response_id = CMD_GET_SENSOR_DATA;
@@ -449,7 +460,8 @@ static esp_err_t handle_get_sensor_data_v2(uint8_t sequence_num, uint8_t *respon
     latest_data.temperature = minute_data.temperature;
     latest_data.humidity = minute_data.humidity;
     latest_data.soil_moisture = minute_data.soil_moisture;
-    latest_data.soil_temperature = minute_data.soil_temperature;
+    latest_data.soil_temperature1 = minute_data.soil_temperature1;
+    latest_data.soil_temperature2 = minute_data.soil_temperature2;
 
     ble_response_packet_t *resp = (ble_response_packet_t *)response_buffer;
     resp->response_id = CMD_GET_SENSOR_DATA_V2;
@@ -460,8 +472,8 @@ static esp_err_t handle_get_sensor_data_v2(uint8_t sequence_num, uint8_t *respon
     memcpy(resp->data, &latest_data, sizeof(soil_data_t));
     *response_length = sizeof(ble_response_packet_t) + sizeof(soil_data_t);
 
-    ESP_LOGI(TAG, "CMD_GET_SENSOR_DATA_V2: temp=%.1f, soil_temp=%.1f, soil=%.0f",
-             latest_data.temperature, latest_data.soil_temperature, latest_data.soil_moisture);
+    ESP_LOGI(TAG, "CMD_GET_SENSOR_DATA_V2: temp=%.1f, soil_temp1=%.1f, soil_temp2=%.1f, soil=%.0f",
+             latest_data.temperature, latest_data.soil_temperature1, latest_data.soil_temperature2, latest_data.soil_moisture);
 
     return ESP_OK;
 }
@@ -938,7 +950,23 @@ static esp_err_t find_data_by_time(const struct tm *target_time, time_data_respo
     err = data_buffer_get_minute_data(target_time, &found_data);
 
     if (err == ESP_OK) {
-        memcpy(result, &found_data, sizeof(time_data_response_t));
+        // データ構造バージョンを設定
+        result->data_version = DATA_STRUCTURE_VERSION;
+
+        // フィールドごとに明示的にコピー
+        memcpy(&result->actual_time, &found_data.timestamp, sizeof(struct tm));
+        result->temperature = found_data.temperature;
+        result->humidity = found_data.humidity;
+        result->lux = found_data.lux;
+        result->soil_moisture = found_data.soil_moisture;
+#if HARDWARE_VERSION == 30
+        result->soil_temperature1 = found_data.soil_temperature1;
+        result->soil_temperature2 = found_data.soil_temperature2;
+        // FDC1004静電容量データをコピー
+        for (int i = 0; i < FDC1004_CHANNEL_COUNT; i++) {
+            result->soil_moisture_capacitance[i] = found_data.soil_moisture_capacitance[i];
+        }
+#endif
         return ESP_OK;
     }
     return ESP_ERR_NOT_FOUND;

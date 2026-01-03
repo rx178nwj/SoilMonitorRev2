@@ -29,13 +29,12 @@ static const char *TAG = "PLANTER_ADC";
 #define ADC_ATTEN           ADC_ATTEN_DB_12 // 12dBの減衰を使用
 #define ADC_BITWIDTH        ADC_BITWIDTH_12 // 12ビットの分解能
 
+#if MOISTURE_SENSOR_TYPE != MOISTURE_SENSOR_TYPE_FDC1004
 // ESP32-C3 ADCチャンネル定義
 // GPIO3 = ADC1_CH3 (Rev2)
 // GPIO2 = ADC1_CH2 (Rev1)
-#if HARDWARE_VERSION == 20
-    #define MOISTURE_ADC_CHANNEL    ADC_CHANNEL_3  // GPIO3 for Rev2
-#else
-    #define MOISTURE_ADC_CHANNEL    ADC_CHANNEL_2  // GPIO2 for Rev1
+#define MOISTURE_ADC_CHANNEL    MOISTURE_AD_CHANNEL  // ADCチャネルはハードウェアバージョンに依存
+
 #endif
 
 // グローバル変数
@@ -45,6 +44,13 @@ static adc_cali_handle_t adc1_cali_moisture_handle = NULL;
 // ADC初期化
 void init_adc(void)
 {
+#if MOISTURE_SENSOR_TYPE == MOISTURE_SENSOR_TYPE_FDC1004
+    // FDC1004を使用する場合、ADCは無効化（他の用途で使用可能）
+    ESP_LOGI(TAG, "ℹ️  Using FDC1004 for moisture sensing, ADC moisture sensor is disabled");
+    adc1_handle = NULL;
+    adc1_cali_moisture_handle = NULL;
+    return;
+#else
     // ADC1初期化
     adc_oneshot_unit_init_cfg_t init_config1 = {
         .unit_id = ADC_UNIT_1,
@@ -81,12 +87,18 @@ void init_adc(void)
 #else
     ESP_LOGI(TAG, "✅ ADC initialized: GPIO2 (ADC1_CH2) - Rev1 Moisture Sensor");
 #endif
+#endif // MOISTURE_ADC_CHANNEL == 0
 }
 
 
 // 水分センサー読み取り
 uint16_t read_moisture_sensor(void)
 {
+#if MOISTURE_SENSOR_TYPE == MOISTURE_SENSOR_TYPE_FDC1004
+    // FDC1004を使用する場合、ADCベースの水分センサーは無効化されています
+    ESP_LOGD(TAG, "⚠️  Using FDC1004 for moisture, ADC sensor disabled, returning 0");
+    return 0;
+#else
     int adc_raw;
     int voltage = 0;
     int sample_count = 10;
@@ -121,4 +133,5 @@ uint16_t read_moisture_sensor(void)
     ESP_LOGI(TAG, "📊 土壌水分センサー: 平均電圧 = %dmV (%d samples)", average_voltage, sample_count);
 
     return average_voltage;
+#endif // MOISTURE_SENSOR_TYPE
 }

@@ -4,6 +4,7 @@
 #include <time.h>
 #include <stdint.h>
 #include "host/ble_hs.h" // ble_gap_event のためにインクルード
+#include "../../common_types.h" // HARDWARE_VERSION のためにインクルード
 #include "../plant_logic/plant_manager.h" // plant_profile_t のためにインクルード
 
 /* --- Constants --- */
@@ -37,13 +38,28 @@ typedef struct __attribute__((packed)) {
 } time_data_request_t;
 
 // 時間指定データ取得レスポンス用構造体
+#if (HARDWARE_VERSION == 10 || HARDWARE_VERSION == 20) // Rev1 or Rev2
 typedef struct __attribute__((packed)) {
+    uint8_t data_version;     // データ構造バージョン (DATA_STRUCTURE_VERSION_1)
     struct tm actual_time;    // 実際に見つかったデータの時間
     float temperature;        // 気温
     float humidity;           // 湿度
     float lux;                // 照度
     float soil_moisture;      // 土壌水分
 } time_data_response_t;
+#elif HARDWARE_VERSION == 30 // Rev3
+typedef struct __attribute__((packed)) {
+    uint8_t data_version;     // データ構造バージョン (DATA_STRUCTURE_VERSION_2)
+    struct tm actual_time;    // 実際に見つかったデータの時間
+    float temperature;        // 気温
+    float humidity;           // 湿度
+    float lux;                // 照度
+    float soil_moisture;      // 土壌水分
+    float soil_temperature1;  // 土壌温度1
+    float soil_temperature2;  // 土壌温度2
+    float soil_moisture_capacitance[FDC1004_CHANNEL_COUNT]; // 土壌湿度計測用静電容量 (pF)
+} time_data_response_t;
+#endif
 
 // デバイス情報構造体
 typedef struct __attribute__((packed)) {

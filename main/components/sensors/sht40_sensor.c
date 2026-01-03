@@ -36,7 +36,7 @@ esp_err_t sht40_read_data_with_precision(sht40_data_t *data, sht40_precision_t p
     uint32_t wait_ms;
     switch (precision) {
         case SHT40_PRECISION_HIGH:
-            wait_ms = 10;  // 高精度: 8.2ms + マージン
+            wait_ms = 20;  // 高精度: 8.2ms + マージン (マージンを増加)
             break;
         case SHT40_PRECISION_MEDIUM:
             wait_ms = 6;   // 中精度: 4.5ms + マージン
@@ -73,14 +73,16 @@ esp_err_t sht40_read_data_with_precision(sht40_data_t *data, sht40_precision_t p
         ESP_LOGW(TAG, "SHT40: 湿度CRCミスマッチ. 期待値: 0x%02X, 実際: 0x%02X", hum_crc, sensor_data[5]);
     }
 
-    // データ変換（SHT40データシートの公式に従う）
+    // データ変換（SHT40データシートv1.0の公式に従う）
     uint16_t temp_raw = (sensor_data[0] << 8) | sensor_data[1];
     uint16_t hum_raw = (sensor_data[3] << 8) | sensor_data[4];
 
     // 温度変換: T[°C] = -45 + 175 * (ST / (2^16 - 1))
+    // Sensirion公式データシート page 3, 10: 2^16 - 1 = 65535 で割る
     data->temperature = -45.0f + 175.0f * ((float)temp_raw / 65535.0f);
 
     // 湿度変換: RH[%] = -6 + 125 * (SRH / (2^16 - 1))
+    // Sensirion公式データシート page 3, 10: 2^16 - 1 = 65535 で割る
     data->humidity = -6.0f + 125.0f * ((float)hum_raw / 65535.0f);
 
     // 湿度を0-100%の範囲に制限
@@ -208,14 +210,6 @@ esp_err_t sht40_init(void)
             continue;
         }
 
-        // シリアルナンバー読み取り（接続確認）
-        uint32_t serial;
-        ret = sht40_read_serial(&serial);
-        if (ret != ESP_OK) {
-            ESP_LOGD(TAG, "SHT40: アドレス 0x%02X でシリアルナンバー読み取り失敗", sht40_detected_addr);
-            continue;
-        }
-
         // テスト測定を実行して接続確認
         sht40_data_t test_data;
         ret = sht40_read_data(&test_data);
@@ -229,10 +223,11 @@ esp_err_t sht40_init(void)
             test_data.humidity < 0.0f || test_data.humidity > 100.0f) {
             ESP_LOGW(TAG, "SHT40: テスト測定値が範囲外 (T:%.1f°C, H:%.1f%%)",
                      test_data.temperature, test_data.humidity);
+            continue;
         }
 
-        ESP_LOGI(TAG, "SHT40: 初期化成功 (アドレス: 0x%02X, T:%.1f°C, H:%.1f%%, S/N:0x%08lX)",
-                 sht40_detected_addr, test_data.temperature, test_data.humidity, (unsigned long)serial);
+        ESP_LOGI(TAG, "SHT40: 初期化成功 (アドレス: 0x%02X, T:%.1f°C, H:%.1f%%)",
+                 sht40_detected_addr, test_data.temperature, test_data.humidity);
         return ESP_OK;
     }
 
