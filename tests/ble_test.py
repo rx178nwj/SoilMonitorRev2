@@ -180,23 +180,76 @@ def notification_handler(sender, data):
     response_received.set()
 
 
-async def find_device(device_name_prefix: str = "PlantMonitor") -> str:
-    """デバイスをスキャンして見つける"""
-    print(f"🔍 '{device_name_prefix}'で始まるデバイスをスキャン中...")
+async def scan_devices(timeout: float = 10.0) -> list:
+    """BLEデバイスをスキャン"""
+    print(f"🔍 BLEデバイスをスキャン中... ({timeout}秒)")
 
-    devices = await BleakScanner.discover(timeout=10.0)
+    devices = await BleakScanner.discover(timeout=timeout)
+
+    # 名前があるデバイスを優先してソート
+    named_devices = []
+    unnamed_devices = []
 
     for device in devices:
-        if device.name and device.name.startswith(device_name_prefix):
-            print(f"✅ デバイス発見: {device.name} ({device.address})")
-            return device.address
+        if device.name:
+            named_devices.append(device)
+        else:
+            unnamed_devices.append(device)
 
-    print("❌ デバイスが見つかりませんでした")
-    print("\n検出されたデバイス一覧:")
-    for device in devices:
-        print(f"  - {device.name or '(名前なし)'}: {device.address}")
+    # 名前付きデバイスを名前順にソート、PlantMonitorを優先
+    named_devices.sort(key=lambda d: (0 if d.name.startswith("PlantMonitor") else 1, d.name))
 
-    return None
+    return named_devices + unnamed_devices
+
+
+async def select_device() -> str:
+    """デバイスをスキャンして選択"""
+    devices = await scan_devices()
+
+    if not devices:
+        print("❌ デバイスが見つかりませんでした")
+        return None
+
+    # PlantMonitorデバイスをフィルタ
+    plant_monitors = [d for d in devices if d.name and d.name.startswith("PlantMonitor")]
+
+    print(f"\n✅ {len(devices)} 個のデバイスが見つかりました")
+
+    if plant_monitors:
+        print(f"   (うち PlantMonitor: {len(plant_monitors)} 個)")
+
+    # デバイス一覧を表示
+    print("\n" + "=" * 60)
+    print("📱 検出されたBLEデバイス一覧")
+    print("=" * 60)
+
+    for i, device in enumerate(devices, 1):
+        name = device.name or "(名前なし)"
+        marker = "🌱" if name.startswith("PlantMonitor") else "  "
+        print(f"  {marker} {i:2d}. {name}")
+        print(f"        アドレス: {device.address}")
+
+    print("=" * 60)
+
+    # デバイス選択
+    while True:
+        try:
+            choice = input(f"\n接続するデバイス番号を入力 (1-{len(devices)}, 0で終了): ").strip()
+
+            if choice == "0":
+                return None
+
+            idx = int(choice) - 1
+            if 0 <= idx < len(devices):
+                selected = devices[idx]
+                print(f"\n✅ 選択: {selected.name or '(名前なし)'} ({selected.address})")
+                return selected.address
+            else:
+                print(f"❌ 1から{len(devices)}の間で入力してください")
+        except ValueError:
+            print("❌ 数字を入力してください")
+        except EOFError:
+            return None
 
 
 async def send_command(client: BleakClient, command_id: int, data: bytes = b'', timeout: float = 5.0) -> dict:
@@ -334,8 +387,8 @@ async def main():
     print("🌱 PlantMonitor BLE通信テスト")
     print("=" * 60)
 
-    # デバイスを検索
-    address = await find_device()
+    # デバイスをスキャンして選択
+    address = await select_device()
 
     if address is None:
         print("\n💡 ヒント: デバイスがアドバタイジング中か確認してください")
