@@ -74,10 +74,9 @@ esp_err_t data_buffer_add_minute_data(const soil_data_t *sensor_data) {
     entry->humidity = sensor_data->humidity;
     entry->lux = sensor_data->lux;
     entry->soil_moisture = sensor_data->soil_moisture;
+#if HARDWARE_VERSION == 30
     entry->soil_temperature1 = sensor_data->soil_temperature1;
     entry->soil_temperature2 = sensor_data->soil_temperature2;
-
-#if HARDWARE_VERSION == 30
     // FDC1004静電容量データをコピー
     for (int i = 0; i < FDC1004_CHANNEL_COUNT; i++) {
         entry->soil_moisture_capacitance[i] = sensor_data->soil_moisture_capacitance[i];

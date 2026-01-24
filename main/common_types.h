@@ -7,6 +7,7 @@
 #include "components/sensors/sht30_sensor.h"   // sht30_data_t のために必要 (Rev1)
 #include "components/sensors/sht40_sensor.h"   // sht40_data_t のために必要 (Rev2)
 #include "components/sensors/tsl2591_sensor.h" // tsl2591_data_t のために必要
+#include "components/sensors/tc74_sensor.h"    // tc74_data_t のために必要
 #include "components/actuators/led_control.h"    // sensor_status_t のために必要
 #include "components/actuators/ws2812_control.h" // ws2812_color_preset_t のために必要
 #include "components/sensors/moisture_sensor.h" // moisture_sensor_profile_t のために必要

@@ -41,6 +41,7 @@
 #include "components/sensors/tsl2591_sensor.h"
 #include "components/sensors/fdc1004_sensor.h"
 #include "components/sensors/ds18b20_sensor.h"
+#include "components/sensors/tc74_sensor.h"
 #include "wifi_manager.h"
 #include "time_sync_manager.h"
 #include "components/sensors/moisture_sensor.h"
@@ -57,6 +58,17 @@ static TaskHandle_t g_sensor_task_handle = NULL;
 static TaskHandle_t g_analysis_task_handle = NULL;
 
 static TimerHandle_t g_notify_timer;
+
+// 土壌温度センサー接続状態
+typedef struct {
+    bool tc74_connected;      // TC74センサーが接続されているか
+    bool ds18b20_connected;   // DS18B20センサーが接続されているか
+} soil_temp_sensor_state_t;
+
+static soil_temp_sensor_state_t g_soil_temp_sensors = {
+    .tc74_connected = false,
+    .ds18b20_connected = false
+};
 
 static void notify_timer_callback(TimerHandle_t xTimer);
 
@@ -102,15 +114,21 @@ static void read_all_sensors(soil_data_t *data) {
 #if MOISTURE_SENSOR_TYPE == MOISTURE_SENSOR_TYPE_FDC1004
     // Rev3: FDC1004静電容量センサーを使用
     fdc1004_data_t fdc_data;
+    float sum = 0.0f;
     if (fdc1004_measure_all_channels(&fdc_data, FDC1004_RATE_100HZ) == ESP_OK) {
-        // CH1の静電容量値を使用（pF単位）
-        data->soil_moisture = fdc_data.capacitance_ch1;
+        
 
         // 全チャンネルの静電容量データを配列に格納
         data->soil_moisture_capacitance[0] = fdc_data.capacitance_ch1;
         data->soil_moisture_capacitance[1] = fdc_data.capacitance_ch2;
         data->soil_moisture_capacitance[2] = fdc_data.capacitance_ch3;
         data->soil_moisture_capacitance[3] = fdc_data.capacitance_ch4;
+
+        // 全チャンネルの平均を土壌水分値として使用
+        for (int i = 0; i < FDC1004_CHANNEL_COUNT; i++) {
+            sum += data->soil_moisture_capacitance[i];
+        }
+        data->soil_moisture = sum / FDC1004_CHANNEL_COUNT;
 
         ESP_LOGI(TAG, "  - FDC1004 CH1: %.3f pF (raw: %d)",
                  fdc_data.capacitance_ch1, fdc_data.raw_ch1);
@@ -205,34 +223,50 @@ static void read_all_sensors(soil_data_t *data) {
 
 #if HARDWARE_VERSION == 30 // Rev3: 土壌温度センサー1と2を読み取り
     // 土壌温度センサー1の読み取り
-#if SOIL_TEMPERATURE1_SENSOR_TYPE == SOIL_TEMPERATURE_SENSOR_DS18B20
-    float soil_temp1;
-    if (ds18b20_read_single_temperature(&soil_temp1) == ESP_OK) {
-        data->soil_temperature1 = soil_temp1;
-        ESP_LOGI(TAG, "  - DS18B20 Soil Temperature 1: %.2f°C", soil_temp1);
+    // 優先順位: TC74が接続されている場合はTC74を使用、そうでなければDS18B20を使用
+    if (g_soil_temp_sensors.tc74_connected) {
+        // TC74センサーを使用
+        float tc74_temp;
+        if (tc74_read_temperature(&tc74_temp) == ESP_OK) {
+            data->soil_temperature1 = tc74_temp;
+            ESP_LOGI(TAG, "  - TC74 Soil Temperature 1: %.0f°C", tc74_temp);
+        } else {
+            data->soil_temperature1 = 0.0f;
+            ESP_LOGW(TAG, "  - TC74: Failed to read temperature 1");
+        }
+    } else if (g_soil_temp_sensors.ds18b20_connected) {
+        // DS18B20センサーを使用 (TC74が接続されていない場合)
+        float ds18b20_temp;
+        if (ds18b20_read_single_temperature(&ds18b20_temp) == ESP_OK) {
+            data->soil_temperature1 = ds18b20_temp;
+            ESP_LOGI(TAG, "  - DS18B20 Soil Temperature 1: %.2f°C", ds18b20_temp);
+        } else {
+            data->soil_temperature1 = 0.0f;
+            ESP_LOGW(TAG, "  - DS18B20: Failed to read temperature 1");
+        }
     } else {
-        data->soil_temperature1 = 0.0f; // エラー時は0を設定
-        ESP_LOGW(TAG, "  - DS18B20: Failed to read temperature 1");
+        // センサーが接続されていない
+        data->soil_temperature1 = 0.0f;
+        ESP_LOGD(TAG, "  - Soil Temperature 1: No sensor connected");
     }
-#elif SOIL_TEMPERATURE1_SENSOR_TYPE == SOIL_TEMPERATURE_SENSOR_NONE
-    data->soil_temperature1 = 0.0f;
-    ESP_LOGD(TAG, "  - Soil Temperature 1: Not configured");
-#endif
 
     // 土壌温度センサー2の読み取り
-#if SOIL_TEMPERATURE2_SENSOR_TYPE == SOIL_TEMPERATURE_SENSOR_DS18B20
-    float soil_temp2;
-    if (ds18b20_read_single_temperature(&soil_temp2) == ESP_OK) {
-        data->soil_temperature2 = soil_temp2;
-        ESP_LOGI(TAG, "  - DS18B20 Soil Temperature 2: %.2f°C", soil_temp2);
+    // DS18B20が接続されており、かつTC74も接続されている場合のみDS18B20をsoil_temperature2として使用
+    if (g_soil_temp_sensors.tc74_connected && g_soil_temp_sensors.ds18b20_connected) {
+        // TC74とDS18B20の両方が接続されている場合、DS18B20をsoil_temperature2に使用
+        float ds18b20_temp2;
+        if (ds18b20_read_single_temperature(&ds18b20_temp2) == ESP_OK) {
+            data->soil_temperature2 = ds18b20_temp2;
+            ESP_LOGI(TAG, "  - DS18B20 Soil Temperature 2: %.2f°C", ds18b20_temp2);
+        } else {
+            data->soil_temperature2 = 0.0f;
+            ESP_LOGW(TAG, "  - DS18B20: Failed to read temperature 2");
+        }
     } else {
-        data->soil_temperature2 = 0.0f; // エラー時は0を設定
-        ESP_LOGW(TAG, "  - DS18B20: Failed to read temperature 2");
+        // TC74のみ、またはDS18B20のみ、または両方とも接続されていない場合
+        data->soil_temperature2 = 0.0f;
+        ESP_LOGD(TAG, "  - Soil Temperature 2: No sensor assigned");
     }
-#elif SOIL_TEMPERATURE2_SENSOR_TYPE == SOIL_TEMPERATURE_SENSOR_NONE
-    data->soil_temperature2 = 0.0f;
-    ESP_LOGD(TAG, "  - Soil Temperature 2: Not configured");
-#endif
 #endif // HARDWARE_VERSION == 30
 }
 
@@ -420,11 +454,36 @@ static esp_err_t system_init(void) {
         ESP_LOGW(TAG, "FDC1004初期化失敗、スキップします");
     }
 
-    // DS18B20土壌温度センサー初期化
-    esp_err_t ds_ret = ds18b20_init();
-    if (ds_ret != ESP_OK) {
-        ESP_LOGW(TAG, "DS18B20初期化失敗、スキップします");
+    // TC74土壌温度センサー初期化 (Rev3)
+    ESP_LOGI(TAG, "TC74土壌温度センサー初期化を試行中...");
+    esp_err_t tc74_ret = tc74_init_with_address(TC74_ADDR_A0);  // TC74A0を使用
+    if (tc74_ret == ESP_OK) {
+        g_soil_temp_sensors.tc74_connected = true;
+        ESP_LOGI(TAG, "✅ TC74センサーが接続されました (soil_temperature1に割り当て)");
+    } else {
+        g_soil_temp_sensors.tc74_connected = false;
+        ESP_LOGW(TAG, "⚠️  TC74センサーが検出されませんでした");
     }
+
+    // DS18B20土壌温度センサー初期化 (Rev3)
+    ESP_LOGI(TAG, "DS18B20土壌温度センサー初期化を試行中...");
+    esp_err_t ds_ret = ds18b20_init();
+    if (ds_ret == ESP_OK) {
+        g_soil_temp_sensors.ds18b20_connected = true;
+        if (g_soil_temp_sensors.tc74_connected) {
+            ESP_LOGI(TAG, "✅ DS18B20センサーが接続されました (soil_temperature2に割り当て)");
+        } else {
+            ESP_LOGI(TAG, "✅ DS18B20センサーが接続されました (soil_temperature1に割り当て)");
+        }
+    } else {
+        g_soil_temp_sensors.ds18b20_connected = false;
+        ESP_LOGW(TAG, "⚠️  DS18B20センサーが検出されませんでした");
+    }
+
+    // センサー接続状態のサマリー表示
+    ESP_LOGI(TAG, "=== 土壌温度センサー接続状態 ===");
+    ESP_LOGI(TAG, "  TC74:     %s", g_soil_temp_sensors.tc74_connected ? "接続済み" : "未接続");
+    ESP_LOGI(TAG, "  DS18B20:  %s", g_soil_temp_sensors.ds18b20_connected ? "接続済み" : "未接続");
 
     ESP_ERROR_CHECK(plant_manager_init());
     log_plant_profile();

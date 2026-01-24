@@ -418,13 +418,33 @@ static esp_err_t handle_get_sensor_data(uint8_t sequence_num, uint8_t *response_
     }
     g_total_sensor_readings++;
 
+    latest_data.data_version = DATA_STRUCTURE_VERSION;
     latest_data.datetime = minute_data.timestamp;
     latest_data.lux = minute_data.lux;
     latest_data.temperature = minute_data.temperature;
     latest_data.humidity = minute_data.humidity;
     latest_data.soil_moisture = minute_data.soil_moisture;
+    latest_data.sensor_error = 0;
+#if HARDWARE_VERSION == 30
     latest_data.soil_temperature1 = minute_data.soil_temperature1;
     latest_data.soil_temperature2 = minute_data.soil_temperature2;
+    // FDC1004静電容量データをコピー
+    for (int i = 0; i < FDC1004_CHANNEL_COUNT; i++) {
+        latest_data.soil_moisture_capacitance[i] = minute_data.soil_moisture_capacitance[i];
+    }
+#endif
+
+    ESP_LOGI(TAG, "CMD_GET_SENSOR_DATA: temp=%.1f, soil_temp1=%.1f, soil_temp2=%.1f, soil=%.0f",
+             latest_data.temperature, latest_data.soil_temperature1, latest_data.soil_temperature2, latest_data.soil_moisture);
+#if HARDWARE_VERSION == 30
+    ESP_LOGI(TAG, "  Soil Temp1: %.1f °C, Soil Temp2: %.1f °C",
+             latest_data.soil_temperature1, latest_data.soil_temperature2);
+    ESP_LOGI(TAG, "  Soil Moisture Capacitance: [%.1f, %.1f, %.1f, %.1f] pF",
+             latest_data.soil_moisture_capacitance[0],
+             latest_data.soil_moisture_capacitance[1],
+             latest_data.soil_moisture_capacitance[2],
+             latest_data.soil_moisture_capacitance[3]);
+#endif
 
     ble_response_packet_t *resp = (ble_response_packet_t *)response_buffer;
     resp->response_id = CMD_GET_SENSOR_DATA;
@@ -462,7 +482,14 @@ static esp_err_t handle_get_sensor_data_v2(uint8_t sequence_num, uint8_t *respon
     latest_data.soil_moisture = minute_data.soil_moisture;
     latest_data.soil_temperature1 = minute_data.soil_temperature1;
     latest_data.soil_temperature2 = minute_data.soil_temperature2;
-
+#if HARDWARE_VERSION == 30
+    latest_data.soil_temperature1 = minute_data.soil_temperature1;
+    latest_data.soil_temperature2 = minute_data.soil_temperature2;
+    // FDC1004静電容量データをコピー
+    for (int i = 0; i < FDC1004_CHANNEL_COUNT; i++) {
+        latest_data.soil_moisture_capacitance[i] = minute_data.soil_moisture_capacitance[i];
+    }
+#endif
     ble_response_packet_t *resp = (ble_response_packet_t *)response_buffer;
     resp->response_id = CMD_GET_SENSOR_DATA_V2;
     resp->status_code = RESP_STATUS_SUCCESS;
