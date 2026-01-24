@@ -29,6 +29,7 @@
 #include "../../nvs_config.h"
 #include "../../wifi_manager.h"
 #include "../../time_sync_manager.h"
+#include "../actuators/ws2812_control.h"
 
 static const char *TAG = "BLE_MGR";
 
@@ -55,6 +56,17 @@ static uint32_t g_total_sensor_readings = 0;
 
 /* --- BLE Activity LED Timer --- */
 static TimerHandle_t g_ble_led_timer = NULL;
+static TimerHandle_t g_ws2812_led_timer = NULL;
+
+/**
+ * @brief WS2812 LED消灯タイマーコールバック
+ */
+static void ws2812_led_timer_callback(TimerHandle_t xTimer)
+{
+    ws2812_clear();
+    ws2812_refresh();
+    ESP_LOGI(TAG, "WS2812 LED turned off by timer");
+}
 
 /**
  * @brief BLE LED消灯タイマーコールバック
@@ -108,6 +120,7 @@ static esp_err_t handle_save_wifi_config(uint8_t sequence_num, uint8_t *response
 static esp_err_t handle_save_plant_profile(uint8_t sequence_num, uint8_t *response_buffer, size_t *response_length);
 static esp_err_t handle_set_timezone(const uint8_t *data, uint16_t data_length, uint8_t sequence_num, uint8_t *response_buffer, size_t *response_length);
 static esp_err_t handle_save_timezone(uint8_t sequence_num, uint8_t *response_buffer, size_t *response_length);
+static esp_err_t handle_control_led(const uint8_t *data, uint16_t data_length, uint8_t sequence_num, uint8_t *response_buffer, size_t *response_length);
 static esp_err_t find_data_by_time(const struct tm *target_time, time_data_response_t *result);
 static esp_err_t send_response_notification(const uint8_t *response_data, size_t response_length);
 
@@ -418,6 +431,9 @@ static esp_err_t process_ble_command(const ble_command_packet_t *cmd_packet,
             break;
         case CMD_GET_SENSOR_DATA_V2:
             err = handle_get_sensor_data_v2(cmd_packet->sequence_num, response_buffer, response_length);
+            break;
+        case CMD_CONTROL_LED:
+            err = handle_control_led(cmd_packet->data, cmd_packet->data_length, cmd_packet->sequence_num, response_buffer, response_length);
             break;
         default: {
             ble_response_packet_t *resp = (ble_response_packet_t *)response_buffer;
@@ -985,6 +1001,49 @@ static esp_err_t handle_get_time_data(const uint8_t *data, uint16_t data_length,
     return ESP_OK;
 }
 
+static esp_err_t handle_control_led(const uint8_t *data, uint16_t data_length, uint8_t sequence_num, uint8_t *response_buffer, size_t *response_length)
+{
+    ble_response_packet_t *resp = (ble_response_packet_t *)response_buffer;
+    resp->response_id = CMD_CONTROL_LED;
+    resp->sequence_num = sequence_num;
+    resp->data_length = 0;
+
+    if (data_length != sizeof(ws2812_led_control_t)) {
+        resp->status_code = RESP_STATUS_INVALID_PARAMETER;
+        ESP_LOGE(TAG, "Invalid LED control data length: %d", data_length);
+        *response_length = sizeof(ble_response_packet_t);
+        return ESP_OK;
+    }
+
+    ws2812_led_control_t led_ctrl;
+    memcpy(&led_ctrl, data, sizeof(ws2812_led_control_t));
+
+    ESP_LOGI(TAG, "CMD_CONTROL_LED: R=%d, G=%d, B=%d, Duration=%d ms",
+             led_ctrl.red, led_ctrl.green, led_ctrl.blue, led_ctrl.duration_ms);
+
+    // LEDの色を設定
+    ws2812_set_color(led_ctrl.red, led_ctrl.green, led_ctrl.blue);
+    ws2812_refresh();
+
+    // タイマー設定（持続時間が0より大きい場合）
+    if (led_ctrl.duration_ms > 0) {
+        if (g_ws2812_led_timer == NULL) {
+            g_ws2812_led_timer = xTimerCreate("ws2812_timer", pdMS_TO_TICKS(led_ctrl.duration_ms), pdFALSE, NULL, ws2812_led_timer_callback);
+        }
+
+        if (g_ws2812_led_timer != NULL) {
+            xTimerChangePeriod(g_ws2812_led_timer, pdMS_TO_TICKS(led_ctrl.duration_ms), 0);
+            xTimerStart(g_ws2812_led_timer, 0);
+        } else {
+            ESP_LOGE(TAG, "Failed to create WS2812 LED timer");
+        }
+    }
+
+    resp->status_code = RESP_STATUS_SUCCESS;
+    *response_length = sizeof(ble_response_packet_t);
+    return ESP_OK;
+}
+
 static esp_err_t send_response_notification(const uint8_t *response_data, size_t response_length)
 {
     if (g_conn_handle == BLE_HS_CONN_HANDLE_NONE || !g_is_subscribed_response) {
@@ -1262,6 +1321,7 @@ void print_ble_system_info(void)
     ESP_LOGI(TAG, "  - 0x10: Get Timezone");
     ESP_LOGI(TAG, "  - 0x11: Sync Internet Time");
     ESP_LOGI(TAG, "  - 0x12: WiFi Disconnect");
+    ESP_LOGI(TAG, "  - 0x18: Control LED (WS2812)");
     ESP_LOGI(TAG, "📡 BLE Characteristics:");
     ESP_LOGI(TAG, "  - Command: Write commands to device");
     ESP_LOGI(TAG, "  - Response: Read/Notify for command responses");

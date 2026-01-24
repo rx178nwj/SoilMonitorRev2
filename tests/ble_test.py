@@ -180,26 +180,19 @@ def notification_handler(sender, data):
     response_received.set()
 
 
-async def scan_devices(timeout: float = 10.0) -> list:
-    """BLEデバイスをスキャン"""
+async def scan_devices(timeout: float = 10.0, name_filter: str = "PlantMonitor_30") -> list:
+    """BLEデバイスをスキャン (PlantMonitor_30のみフィルタ)"""
     print(f"🔍 BLEデバイスをスキャン中... ({timeout}秒)")
 
     devices = await BleakScanner.discover(timeout=timeout)
 
-    # 名前があるデバイスを優先してソート
-    named_devices = []
-    unnamed_devices = []
+    # PlantMonitor_30で始まるデバイスのみをフィルタ
+    filtered_devices = [d for d in devices if d.name and d.name.startswith(name_filter)]
 
-    for device in devices:
-        if device.name:
-            named_devices.append(device)
-        else:
-            unnamed_devices.append(device)
+    # 名前順にソート
+    filtered_devices.sort(key=lambda d: d.name)
 
-    # 名前付きデバイスを名前順にソート、PlantMonitorを優先
-    named_devices.sort(key=lambda d: (0 if d.name.startswith("PlantMonitor") else 1, d.name))
-
-    return named_devices + unnamed_devices
+    return filtered_devices
 
 
 async def select_device() -> str:
@@ -207,29 +200,28 @@ async def select_device() -> str:
     devices = await scan_devices()
 
     if not devices:
-        print("❌ デバイスが見つかりませんでした")
+        print("❌ PlantMonitor_30デバイスが見つかりませんでした")
+        print("💡 ヒント: デバイスがアドバタイジング中か確認してください")
         return None
 
-    # PlantMonitorデバイスをフィルタ
-    plant_monitors = [d for d in devices if d.name and d.name.startswith("PlantMonitor")]
-
-    print(f"\n✅ {len(devices)} 個のデバイスが見つかりました")
-
-    if plant_monitors:
-        print(f"   (うち PlantMonitor: {len(plant_monitors)} 個)")
+    print(f"\n✅ {len(devices)} 個の PlantMonitor_30 デバイスが見つかりました")
 
     # デバイス一覧を表示
     print("\n" + "=" * 60)
-    print("📱 検出されたBLEデバイス一覧")
+    print("🌱 検出された PlantMonitor_30 デバイス一覧")
     print("=" * 60)
 
     for i, device in enumerate(devices, 1):
-        name = device.name or "(名前なし)"
-        marker = "🌱" if name.startswith("PlantMonitor") else "  "
-        print(f"  {marker} {i:2d}. {name}")
-        print(f"        アドレス: {device.address}")
+        print(f"  {i:2d}. {device.name}")
+        print(f"      アドレス: {device.address}")
 
     print("=" * 60)
+
+    # デバイスが1つだけの場合は自動選択
+    if len(devices) == 1:
+        selected = devices[0]
+        print(f"\n✅ 自動選択: {selected.name} ({selected.address})")
+        return selected.address
 
     # デバイス選択
     while True:
@@ -242,7 +234,7 @@ async def select_device() -> str:
             idx = int(choice) - 1
             if 0 <= idx < len(devices):
                 selected = devices[idx]
-                print(f"\n✅ 選択: {selected.name or '(名前なし)'} ({selected.address})")
+                print(f"\n✅ 選択: {selected.name} ({selected.address})")
                 return selected.address
             else:
                 print(f"❌ 1から{len(devices)}の間で入力してください")
@@ -387,11 +379,10 @@ async def main():
     print("🌱 PlantMonitor BLE通信テスト")
     print("=" * 60)
 
-    # デバイスをスキャンして選択
+    # デバイスをスキャンして選択 (PlantMonitor_30のみ)
     address = await select_device()
 
     if address is None:
-        print("\n💡 ヒント: デバイスがアドバタイジング中か確認してください")
         return
 
     # モード選択
