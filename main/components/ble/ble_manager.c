@@ -121,6 +121,7 @@ static esp_err_t handle_save_plant_profile(uint8_t sequence_num, uint8_t *respon
 static esp_err_t handle_set_timezone(const uint8_t *data, uint16_t data_length, uint8_t sequence_num, uint8_t *response_buffer, size_t *response_length);
 static esp_err_t handle_save_timezone(uint8_t sequence_num, uint8_t *response_buffer, size_t *response_length);
 static esp_err_t handle_control_led(const uint8_t *data, uint16_t data_length, uint8_t sequence_num, uint8_t *response_buffer, size_t *response_length);
+static esp_err_t handle_set_led_brightness(const uint8_t *data, uint16_t data_length, uint8_t sequence_num, uint8_t *response_buffer, size_t *response_length);
 static esp_err_t find_data_by_time(const struct tm *target_time, time_data_response_t *result);
 static esp_err_t send_response_notification(const uint8_t *response_data, size_t response_length);
 
@@ -434,6 +435,9 @@ static esp_err_t process_ble_command(const ble_command_packet_t *cmd_packet,
             break;
         case CMD_CONTROL_LED:
             err = handle_control_led(cmd_packet->data, cmd_packet->data_length, cmd_packet->sequence_num, response_buffer, response_length);
+            break;
+        case CMD_SET_LED_BRIGHTNESS:
+            err = handle_set_led_brightness(cmd_packet->data, cmd_packet->data_length, cmd_packet->sequence_num, response_buffer, response_length);
             break;
         default: {
             ble_response_packet_t *resp = (ble_response_packet_t *)response_buffer;
@@ -1047,6 +1051,34 @@ static esp_err_t handle_control_led(const uint8_t *data, uint16_t data_length, u
     return ESP_OK;
 }
 
+static esp_err_t handle_set_led_brightness(const uint8_t *data, uint16_t data_length, uint8_t sequence_num, uint8_t *response_buffer, size_t *response_length)
+{
+    ble_response_packet_t *resp = (ble_response_packet_t *)response_buffer;
+    resp->response_id = CMD_SET_LED_BRIGHTNESS;
+    resp->sequence_num = sequence_num;
+    resp->data_length = 0;
+
+    if (data_length != sizeof(ws2812_brightness_t)) {
+        resp->status_code = RESP_STATUS_INVALID_PARAMETER;
+        ESP_LOGE(TAG, "Invalid LED brightness data length: %d", data_length);
+        *response_length = sizeof(ble_response_packet_t);
+        return ESP_OK;
+    }
+
+    ws2812_brightness_t bright_ctrl;
+    memcpy(&bright_ctrl, data, sizeof(ws2812_brightness_t));
+
+    ESP_LOGI(TAG, "CMD_SET_LED_BRIGHTNESS: Brightness=%d%%", bright_ctrl.brightness);
+
+    // 輝度を設定 (0-100%)
+    ws2812_set_brightness(bright_ctrl.brightness);
+    ws2812_refresh();
+
+    resp->status_code = RESP_STATUS_SUCCESS;
+    *response_length = sizeof(ble_response_packet_t);
+    return ESP_OK;
+}
+
 static esp_err_t send_response_notification(const uint8_t *response_data, size_t response_length)
 {
     if (g_conn_handle == BLE_HS_CONN_HANDLE_NONE || !g_is_subscribed_response) {
@@ -1325,6 +1357,7 @@ void print_ble_system_info(void)
     ESP_LOGI(TAG, "  - 0x11: Sync Internet Time");
     ESP_LOGI(TAG, "  - 0x12: WiFi Disconnect");
     ESP_LOGI(TAG, "  - 0x18: Control LED (WS2812)");
+    ESP_LOGI(TAG, "  - 0x19: Set LED Brightness");
     ESP_LOGI(TAG, "📡 BLE Characteristics:");
     ESP_LOGI(TAG, "  - Command: Write commands to device");
     ESP_LOGI(TAG, "  - Response: Read/Notify for command responses");

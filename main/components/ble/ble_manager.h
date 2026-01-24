@@ -85,6 +85,11 @@ typedef struct __attribute__((packed)) {
     uint16_t duration_ms;   // 点灯時間 (ミリ秒)
 } ws2812_led_control_t;
 
+// WS2812 輝度設定構造体
+typedef struct __attribute__((packed)) {
+    uint8_t brightness;     // 輝度 (0-100%)
+} ws2812_brightness_t;
+
 // システムステータス構造体（CMD_GET_SYSTEM_STATUS用）
 typedef struct __attribute__((packed)) {
     uint32_t uptime_seconds;    // 稼働時間（秒）
@@ -124,6 +129,7 @@ typedef enum {
     CMD_SAVE_TIMEZONE = 0x16,       // タイムゾーン設定をNVSに保存
     CMD_GET_SENSOR_DATA_V2 = 0x17,  // 最新センサーデータ取得（土壌温度含む）
     CMD_CONTROL_LED = 0x18,         // LED制御（WS2812）
+    CMD_SET_LED_BRIGHTNESS = 0x19,  // LED輝度設定
 } ble_command_id_t;
 
 typedef enum {

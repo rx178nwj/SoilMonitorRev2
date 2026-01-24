@@ -23,6 +23,7 @@ RESPONSE_UUID = "6a3b2c1d-4e5f-6a7b-8c9d-e0f123456792"
 
 # コマンドID
 CMD_CONTROL_LED = 0x18
+CMD_SET_LED_BRIGHTNESS = 0x19
 
 # レスポンスステータス
 RESP_STATUS_SUCCESS = 0x00
@@ -166,6 +167,37 @@ async def test_led_control(address: str):
             # 点灯時間分待機 + 少し余裕
             wait_time = (duration / 1000.0) + 0.5 if duration > 0 else 1.0
             await asyncio.sleep(wait_time)
+
+        print("\n🔅 LED輝度変更テスト開始")
+        print("=" * 60)
+        
+        # まず白で点灯（輝度10%）
+        print(f"  ➡️  初期点灯: 白 (輝度10%)")
+        payload = struct.pack('<BBBBH', 255, 255, 255, 10, 0) # 持続時間0=常時点灯
+        await send_command(client, CMD_CONTROL_LED, payload)
+        await asyncio.sleep(1.0)
+
+        # 輝度を変更していく
+        brightness_levels = [20, 50, 80, 100, 10, 0]
+        for bright in brightness_levels:
+            print(f"  ➡️  輝度変更: {bright}%")
+            
+            # コマンドデータ作成 (Brightness)
+            payload = struct.pack('<B', bright)
+            
+            response = await send_command(client, CMD_SET_LED_BRIGHTNESS, payload)
+            
+            if response.get('status_code') == RESP_STATUS_SUCCESS:
+                print(f"     ✅ 成功")
+            else:
+                print(f"     ❌ 失敗: {response}")
+            
+            await asyncio.sleep(0.5)
+
+        # 最後に消灯
+        print(f"  ➡️  終了処理: 消灯")
+        payload = struct.pack('<BBBBH', 0, 0, 0, 0, 0)
+        await send_command(client, CMD_CONTROL_LED, payload)
 
         await client.stop_notify(RESPONSE_UUID)
         print("\n✅ テスト完了!")
