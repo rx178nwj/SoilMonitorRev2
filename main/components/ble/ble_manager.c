@@ -1018,8 +1018,11 @@ static esp_err_t handle_control_led(const uint8_t *data, uint16_t data_length, u
     ws2812_led_control_t led_ctrl;
     memcpy(&led_ctrl, data, sizeof(ws2812_led_control_t));
 
-    ESP_LOGI(TAG, "CMD_CONTROL_LED: R=%d, G=%d, B=%d, Duration=%d ms",
-             led_ctrl.red, led_ctrl.green, led_ctrl.blue, led_ctrl.duration_ms);
+    ESP_LOGI(TAG, "CMD_CONTROL_LED: R=%d, G=%d, B=%d, Bright=%d%%, Duration=%d ms",
+             led_ctrl.red, led_ctrl.green, led_ctrl.blue, led_ctrl.brightness, led_ctrl.duration_ms);
+
+    // 輝度を設定 (0-100%)
+    ws2812_set_brightness(led_ctrl.brightness);
 
     // LEDの色を設定
     ws2812_set_color(led_ctrl.red, led_ctrl.green, led_ctrl.blue);

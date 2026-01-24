@@ -81,6 +81,7 @@ typedef struct __attribute__((packed)) {
     uint8_t red;            // 赤 (0-255)
     uint8_t green;          // 緑 (0-255)
     uint8_t blue;           // 青 (0-255)
+    uint8_t brightness;     // 輝度 (0-100%)
     uint16_t duration_ms;   // 点灯時間 (ミリ秒)
 } ws2812_led_control_t;
 

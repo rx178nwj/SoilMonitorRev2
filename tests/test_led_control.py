@@ -138,25 +138,23 @@ async def test_led_control(address: str):
         await client.start_notify(RESPONSE_UUID, notification_handler)
 
         colors = [
-            ("赤", 255, 0, 0, 1000),
-            ("緑", 0, 255, 0, 1000),
-            ("青", 0, 0, 255, 1000),
-            ("黄", 255, 255, 0, 1000),
-            ("紫", 255, 0, 255, 1000),
-            ("水色", 0, 255, 255, 1000),
-            ("白", 255, 255, 255, 1000),
-            ("消灯", 0, 0, 0, 0)
+            ("赤 (輝度50%)", 255, 0, 0, 50, 1000),
+            ("緑 (輝度50%)", 0, 255, 0, 50, 1000),
+            ("青 (輝度50%)", 0, 0, 255, 50, 1000),
+            ("白 (輝度10%)", 255, 255, 255, 10, 1000),
+            ("白 (輝度100%)", 255, 255, 255, 100, 1000),
+            ("消灯", 0, 0, 0, 0, 0)
         ]
 
-        print("\n🎨 LEDカラーサイクルテスト開始")
+        print("\n🎨 LEDカラー・輝度制御テスト開始")
         print("=" * 60)
 
-        for name, r, g, b, duration in colors:
-            print(f"  ➡️  {name} (R={r}, G={g}, B={b}, Time={duration}ms) 送信...")
+        for name, r, g, b, bright, duration in colors:
+            print(f"  ➡️  {name} (R={r}, G={g}, B={b}, Bright={bright}%, Time={duration}ms) 送信...")
             
-            # コマンドデータ作成 (R, G, B, Duration_LSB, Duration_MSB)
+            # コマンドデータ作成 (R, G, B, Brightness, Duration_LSB, Duration_MSB)
             # Durationは uint16_t なので Little Endian でパック
-            payload = struct.pack('<BBBH', r, g, b, duration)
+            payload = struct.pack('<BBBBH', r, g, b, bright, duration)
             
             response = await send_command(client, CMD_CONTROL_LED, payload)
             
