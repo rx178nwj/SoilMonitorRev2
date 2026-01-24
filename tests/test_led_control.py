@@ -178,7 +178,7 @@ async def test_led_control(address: str):
         await asyncio.sleep(1.0)
 
         # 輝度を変更していく
-        brightness_levels = [20, 50, 80, 100, 10, 0]
+        brightness_levels = [20, 50, 80, 100, 10, 20]
         for bright in brightness_levels:
             print(f"  ➡️  輝度変更: {bright}%")
             
@@ -194,13 +194,9 @@ async def test_led_control(address: str):
             
             await asyncio.sleep(0.5)
 
-        # 最後に消灯
-        print(f"  ➡️  終了処理: 消灯")
-        payload = struct.pack('<BBBBH', 0, 0, 0, 0, 0)
-        await send_command(client, CMD_CONTROL_LED, payload)
+        print(f"\n✅ テスト完了 (LEDは輝度20%で点灯中)")
 
         await client.stop_notify(RESPONSE_UUID)
-        print("\n✅ テスト完了!")
 
 
 if __name__ == "__main__":
