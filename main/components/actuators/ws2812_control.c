@@ -219,6 +219,57 @@ esp_err_t ws2812_refresh(void)
 }
 
 /**
+ * @brief 湿度パーセントに応じた色温度でLEDを表示
+ * @param humidity_percent 湿度パーセント(0-100)
+ *        0%: 暖色（オレンジ/赤系）- 乾燥
+ *        100%: 寒色（青）- 湿潤
+ * @return ESP_OK: 成功, その他: エラー
+ */
+esp_err_t ws2812_set_color_by_humidity(uint8_t humidity_percent)
+{
+    // 0-100の範囲にクランプ
+    if (humidity_percent > 100) humidity_percent = 100;
+
+    // 色温度グラデーション: 暖色(乾燥) → 寒色(湿潤)
+    // 0%:   オレンジ (255, 80, 0)
+    // 25%:  黄色     (255, 200, 0)
+    // 50%:  緑       (0, 255, 0)
+    // 75%:  シアン   (0, 200, 255)
+    // 100%: 青       (0, 50, 255)
+
+    uint8_t r, g, b;
+
+    if (humidity_percent <= 25) {
+        // 0-25%: オレンジ → 黄色
+        float t = humidity_percent / 25.0f;
+        r = 255;
+        g = (uint8_t)(80 + (200 - 80) * t);
+        b = 0;
+    } else if (humidity_percent <= 50) {
+        // 25-50%: 黄色 → 緑
+        float t = (humidity_percent - 25) / 25.0f;
+        r = (uint8_t)(255 * (1.0f - t));
+        g = (uint8_t)(200 + (255 - 200) * t);
+        b = 0;
+    } else if (humidity_percent <= 75) {
+        // 50-75%: 緑 → シアン
+        float t = (humidity_percent - 50) / 25.0f;
+        r = 0;
+        g = (uint8_t)(255 - (255 - 200) * t);
+        b = (uint8_t)(255 * t);
+    } else {
+        // 75-100%: シアン → 青
+        float t = (humidity_percent - 75) / 25.0f;
+        r = 0;
+        g = (uint8_t)(200 * (1.0f - t) + 50 * t);
+        b = 255;
+    }
+
+    ESP_LOGI(TAG, "��️ 湿度 %d%% → LED色 R=%d, G=%d, B=%d", humidity_percent, r, g, b);
+    return ws2812_set_color(r, g, b);
+}
+
+/**
  * @brief センサーステータスに応じてLED表示
  * @param moisture_warning 水分不足警告
  * @param temp_high 高温警告

@@ -99,6 +99,38 @@ static int compare_floats(const void *a, const void *b) {
     return (fa > fb) - (fa < fb);
 }
 
+#if HARDWARE_VERSION == 30
+/**
+ * 静電容量(pF)から湿度パーセント(0-100)への変換テーブル
+ * 0.1pF: 乾燥 (0%)
+ * 16pF: 湿潤 (100%)
+ * 線形補間で変換
+ */
+#define CAPACITANCE_DRY_PF    0.1f   // 乾燥時の静電容量 (pF)
+#define CAPACITANCE_WET_PF    16.0f  // 湿潤時の静電容量 (pF)
+
+/**
+ * @brief 静電容量(pF)から湿度パーセントに変換
+ * @param capacitance_pf 静電容量値 (pF)
+ * @return 湿度パーセント (0-100)
+ */
+static uint8_t capacitance_to_humidity_percent(float capacitance_pf) {
+    // 範囲外の値をクランプ
+    if (capacitance_pf <= CAPACITANCE_DRY_PF) {
+        return 0;
+    }
+    if (capacitance_pf >= CAPACITANCE_WET_PF) {
+        return 100;
+    }
+
+    // 線形補間: (capacitance - dry) / (wet - dry) * 100
+    float humidity = (capacitance_pf - CAPACITANCE_DRY_PF) /
+                     (CAPACITANCE_WET_PF - CAPACITANCE_DRY_PF) * 100.0f;
+
+    return (uint8_t)humidity;
+}
+#endif
+
 // 全センサーデータ読み取り
 static void read_all_sensors(soil_data_t *data) {
     ESP_LOGI(TAG, "📊 Reading all sensors...");
@@ -368,6 +400,27 @@ static void status_analysis_task(void *pvParameters) {
         // 結果をログに出力
         log_sensor_data_and_status(&display_data, &status, ++analysis_count);
 
+#if HARDWARE_VERSION == 30
+        // Rev3: 静電容量から湿度を計算し、色温度でLED表示
+        // 温度限界のみ特別扱い
+        if (status.plant_condition == TEMP_TOO_HIGH) {
+            ws2812_set_preset_color(WS2812_COLOR_RED);
+            ESP_LOGW(TAG, "🔥 高温限界です！");
+        } else if (status.plant_condition == TEMP_TOO_LOW) {
+            ws2812_set_preset_color(WS2812_COLOR_BLUE);
+            ESP_LOGW(TAG, "🧊 低温限界です！");
+        } else if (status.plant_condition == ERROR_CONDITION) {
+            ws2812_set_preset_color(WS2812_COLOR_PURPLE);
+            ESP_LOGE(TAG, "❌ エラー状態です！");
+        } else {
+            // 静電容量の平均値から湿度パーセントを計算
+            uint8_t humidity_percent = capacitance_to_humidity_percent(latest_sensor.soil_moisture);
+            ESP_LOGI(TAG, "📊 静電容量: %.2f pF → 湿度: %d%%", latest_sensor.soil_moisture, humidity_percent);
+            // 湿度に応じた色温度でLED表示 (暖色:乾燥 → 青:湿潤)
+            ws2812_set_color_by_humidity(humidity_percent);
+        }
+#else
+        // Rev1/Rev2: 従来の状態別LED表示
         switch (status.plant_condition) {
             case TEMP_TOO_HIGH:
                 ws2812_set_preset_color(WS2812_COLOR_RED);
@@ -398,6 +451,7 @@ static void status_analysis_task(void *pvParameters) {
                 ws2812_set_preset_color(WS2812_COLOR_OFF);
                 break;
         }
+#endif
 
         vTaskDelay(pdMS_TO_TICKS(60000)); // 1分待機
     }

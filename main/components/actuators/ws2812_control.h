@@ -36,4 +36,13 @@ esp_err_t ws2812_refresh(void);
 // ステータス表示用関数
 esp_err_t ws2812_show_status(bool moisture_warning, bool temp_high, bool temp_low, bool light_low, bool all_ok);
 
+/**
+ * @brief 湿度パーセントに応じた色温度でLEDを表示
+ * @param humidity_percent 湿度パーセント(0-100)
+ *        0%: 暖色（オレンジ/赤系）- 乾燥
+ *        100%: 寒色（青）- 湿潤
+ * @return ESP_OK: 成功, その他: エラー
+ */
+esp_err_t ws2812_set_color_by_humidity(uint8_t humidity_percent);
+
 #endif // WS2812_CONTROL_H
