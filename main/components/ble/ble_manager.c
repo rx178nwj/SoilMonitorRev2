@@ -53,6 +53,38 @@ static bool g_command_processing = false;
 static uint32_t g_system_uptime = 0;
 static uint32_t g_total_sensor_readings = 0;
 
+/* --- BLE Activity LED Timer --- */
+static TimerHandle_t g_ble_led_timer = NULL;
+
+/**
+ * @brief BLE LED消灯タイマーコールバック
+ */
+static void ble_led_timer_callback(TimerHandle_t xTimer)
+{
+    gpio_set_level(BLUE_LED_PIN, 0);  // LED消灯
+}
+
+/**
+ * @brief BLE通信成功時にLEDを1秒間点灯
+ */
+static void ble_activity_led_blink(void)
+{
+    // タイマーが未作成の場合は作成
+    if (g_ble_led_timer == NULL) {
+        g_ble_led_timer = xTimerCreate("ble_led", pdMS_TO_TICKS(1000), pdFALSE, NULL, ble_led_timer_callback);
+        if (g_ble_led_timer == NULL) {
+            ESP_LOGW(TAG, "BLE LEDタイマー作成失敗");
+            return;
+        }
+    }
+
+    // LED点灯
+    gpio_set_level(BLUE_LED_PIN, 1);
+
+    // タイマーをリセットして開始（既に動作中の場合もリセット）
+    xTimerReset(g_ble_led_timer, 0);
+}
+
 /* --- Function Prototypes --- */
 static int gap_event_handler(struct ble_gap_event *event, void *arg);
 static void on_sync(void);
@@ -398,6 +430,12 @@ static esp_err_t process_ble_command(const ble_command_packet_t *cmd_packet,
             break;
         }
     }
+
+    // コマンド成功時にBLE LEDを1秒間点灯
+    if (err == ESP_OK) {
+        ble_activity_led_blink();
+    }
+
     return err;
 }
 
