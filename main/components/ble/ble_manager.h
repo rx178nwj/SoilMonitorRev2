@@ -59,6 +59,20 @@ typedef struct __attribute__((packed)) {
     float soil_temperature2;  // 土壌温度2
     float soil_moisture_capacitance[FDC1004_CHANNEL_COUNT]; // 土壌湿度計測用静電容量 (pF)
 } time_data_response_t;
+#elif HARDWARE_VERSION == 40 // Rev4
+typedef struct __attribute__((packed)) {
+    uint8_t data_version;     // データ構造バージョン (DATA_STRUCTURE_VERSION_3)
+    struct tm actual_time;    // 実際に見つかったデータの時間
+    float temperature;        // 気温
+    float humidity;           // 湿度
+    float lux;                // 照度
+    float soil_moisture;      // 土壌水分
+    float soil_temperature[TMP102_MAX_DEVICES]; // 土壌温度 x4 (TMP102) [°C]
+    uint8_t soil_temperature_count;             // 有効な土壌温度センサー数
+    float soil_moisture_capacitance[FDC1004_CHANNEL_COUNT]; // 土壌湿度計測用静電容量 (pF)
+    float ext_temperature;          // 拡張温度センサー (DS18B20) [°C]
+    uint8_t ext_temperature_valid;  // 拡張温度データの有効性
+} time_data_response_t;
 #endif
 
 // デバイス情報構造体
@@ -130,6 +144,7 @@ typedef enum {
     CMD_GET_SENSOR_DATA_V2 = 0x17,  // 最新センサーデータ取得（土壌温度含む）
     CMD_CONTROL_LED = 0x18,         // LED制御（WS2812）
     CMD_SET_LED_BRIGHTNESS = 0x19,  // LED輝度設定
+    CMD_GET_SENSOR_CONFIG = 0x1A,   // 土壌センサー構成情報取得
 } ble_command_id_t;
 
 typedef enum {

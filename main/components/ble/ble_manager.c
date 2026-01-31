@@ -31,6 +31,9 @@
 #include "../../time_sync_manager.h"
 #include "../actuators/ws2812_control.h"
 
+// main.cで定義されるセンサー構成情報
+extern soil_sensor_config_t g_sensor_config;
+
 static const char *TAG = "BLE_MGR";
 
 /* --- GATT Handles --- */
@@ -122,6 +125,7 @@ static esp_err_t handle_set_timezone(const uint8_t *data, uint16_t data_length, 
 static esp_err_t handle_save_timezone(uint8_t sequence_num, uint8_t *response_buffer, size_t *response_length);
 static esp_err_t handle_control_led(const uint8_t *data, uint16_t data_length, uint8_t sequence_num, uint8_t *response_buffer, size_t *response_length);
 static esp_err_t handle_set_led_brightness(const uint8_t *data, uint16_t data_length, uint8_t sequence_num, uint8_t *response_buffer, size_t *response_length);
+static esp_err_t handle_get_sensor_config(uint8_t sequence_num, uint8_t *response_buffer, size_t *response_length);
 static esp_err_t find_data_by_time(const struct tm *target_time, time_data_response_t *result);
 static esp_err_t send_response_notification(const uint8_t *response_data, size_t response_length);
 
@@ -232,10 +236,19 @@ static int gatt_svr_access_sensor_data_cb(uint16_t conn_handle, uint16_t attr_ha
         ble_data.humidity = latest_data.humidity;
         ble_data.lux = latest_data.lux;
         ble_data.soil_moisture = latest_data.soil_moisture;
-#if HARDWARE_VERSION == 30
+#if HARDWARE_VERSION == 40
+        for (int i = 0; i < TMP102_MAX_DEVICES; i++) {
+            ble_data.soil_temperature[i] = latest_data.soil_temperature[i];
+        }
+        ble_data.soil_temperature_count = latest_data.soil_temperature_count;
+        for (int i = 0; i < FDC1004_CHANNEL_COUNT; i++) {
+            ble_data.soil_moisture_capacitance[i] = latest_data.soil_moisture_capacitance[i];
+        }
+        ble_data.ext_temperature = latest_data.ext_temperature;
+        ble_data.ext_temperature_valid = latest_data.ext_temperature_valid ? 1 : 0;
+#elif HARDWARE_VERSION == 30
         ble_data.soil_temperature1 = latest_data.soil_temperature1;
         ble_data.soil_temperature2 = latest_data.soil_temperature2;
-        // FDC1004静電容量データをコピー
         for (int i = 0; i < FDC1004_CHANNEL_COUNT; i++) {
             ble_data.soil_moisture_capacitance[i] = latest_data.soil_moisture_capacitance[i];
         }
@@ -439,6 +452,9 @@ static esp_err_t process_ble_command(const ble_command_packet_t *cmd_packet,
         case CMD_SET_LED_BRIGHTNESS:
             err = handle_set_led_brightness(cmd_packet->data, cmd_packet->data_length, cmd_packet->sequence_num, response_buffer, response_length);
             break;
+        case CMD_GET_SENSOR_CONFIG:
+            err = handle_get_sensor_config(cmd_packet->sequence_num, response_buffer, response_length);
+            break;
         default: {
             ble_response_packet_t *resp = (ble_response_packet_t *)response_buffer;
             resp->response_id = cmd_packet->command_id;
@@ -483,18 +499,37 @@ static esp_err_t handle_get_sensor_data(uint8_t sequence_num, uint8_t *response_
     latest_data.humidity = minute_data.humidity;
     latest_data.soil_moisture = minute_data.soil_moisture;
     latest_data.sensor_error = 0;
-#if HARDWARE_VERSION == 30
-    latest_data.soil_temperature1 = minute_data.soil_temperature1;
-    latest_data.soil_temperature2 = minute_data.soil_temperature2;
-    // FDC1004静電容量データをコピー
+#if HARDWARE_VERSION == 40
+    for (int i = 0; i < TMP102_MAX_DEVICES; i++) {
+        latest_data.soil_temperature[i] = minute_data.soil_temperature[i];
+    }
+    latest_data.soil_temperature_count = minute_data.soil_temperature_count;
     for (int i = 0; i < FDC1004_CHANNEL_COUNT; i++) {
         latest_data.soil_moisture_capacitance[i] = minute_data.soil_moisture_capacitance[i];
     }
-#endif
+    latest_data.ext_temperature = minute_data.ext_temperature;
+    latest_data.ext_temperature_valid = minute_data.ext_temperature_valid;
+
+    ESP_LOGI(TAG, "CMD_GET_SENSOR_DATA: temp=%.1f, soil_temp_count=%d, soil=%.0f, ext_temp=%.2f(%s)",
+             latest_data.temperature, latest_data.soil_temperature_count, latest_data.soil_moisture,
+             latest_data.ext_temperature, latest_data.ext_temperature_valid ? "valid" : "invalid");
+    for (int i = 0; i < latest_data.soil_temperature_count; i++) {
+        ESP_LOGI(TAG, "  Soil Temp[%d]: %.2f °C", i, latest_data.soil_temperature[i]);
+    }
+    ESP_LOGI(TAG, "  Soil Moisture Capacitance: [%.1f, %.1f, %.1f, %.1f] pF",
+             latest_data.soil_moisture_capacitance[0],
+             latest_data.soil_moisture_capacitance[1],
+             latest_data.soil_moisture_capacitance[2],
+             latest_data.soil_moisture_capacitance[3]);
+#elif HARDWARE_VERSION == 30
+    latest_data.soil_temperature1 = minute_data.soil_temperature1;
+    latest_data.soil_temperature2 = minute_data.soil_temperature2;
+    for (int i = 0; i < FDC1004_CHANNEL_COUNT; i++) {
+        latest_data.soil_moisture_capacitance[i] = minute_data.soil_moisture_capacitance[i];
+    }
 
     ESP_LOGI(TAG, "CMD_GET_SENSOR_DATA: temp=%.1f, soil_temp1=%.1f, soil_temp2=%.1f, soil=%.0f",
              latest_data.temperature, latest_data.soil_temperature1, latest_data.soil_temperature2, latest_data.soil_moisture);
-#if HARDWARE_VERSION == 30
     ESP_LOGI(TAG, "  Soil Temp1: %.1f °C, Soil Temp2: %.1f °C",
              latest_data.soil_temperature1, latest_data.soil_temperature2);
     ESP_LOGI(TAG, "  Soil Moisture Capacitance: [%.1f, %.1f, %.1f, %.1f] pF",
@@ -502,6 +537,9 @@ static esp_err_t handle_get_sensor_data(uint8_t sequence_num, uint8_t *response_
              latest_data.soil_moisture_capacitance[1],
              latest_data.soil_moisture_capacitance[2],
              latest_data.soil_moisture_capacitance[3]);
+#else
+    ESP_LOGI(TAG, "CMD_GET_SENSOR_DATA: temp=%.1f, soil=%.0f",
+             latest_data.temperature, latest_data.soil_moisture);
 #endif
 
     ble_response_packet_t *resp = (ble_response_packet_t *)response_buffer;
@@ -538,12 +576,19 @@ static esp_err_t handle_get_sensor_data_v2(uint8_t sequence_num, uint8_t *respon
     latest_data.temperature = minute_data.temperature;
     latest_data.humidity = minute_data.humidity;
     latest_data.soil_moisture = minute_data.soil_moisture;
+#if HARDWARE_VERSION == 40
+    for (int i = 0; i < TMP102_MAX_DEVICES; i++) {
+        latest_data.soil_temperature[i] = minute_data.soil_temperature[i];
+    }
+    latest_data.soil_temperature_count = minute_data.soil_temperature_count;
+    for (int i = 0; i < FDC1004_CHANNEL_COUNT; i++) {
+        latest_data.soil_moisture_capacitance[i] = minute_data.soil_moisture_capacitance[i];
+    }
+    latest_data.ext_temperature = minute_data.ext_temperature;
+    latest_data.ext_temperature_valid = minute_data.ext_temperature_valid;
+#elif HARDWARE_VERSION == 30
     latest_data.soil_temperature1 = minute_data.soil_temperature1;
     latest_data.soil_temperature2 = minute_data.soil_temperature2;
-#if HARDWARE_VERSION == 30
-    latest_data.soil_temperature1 = minute_data.soil_temperature1;
-    latest_data.soil_temperature2 = minute_data.soil_temperature2;
-    // FDC1004静電容量データをコピー
     for (int i = 0; i < FDC1004_CHANNEL_COUNT; i++) {
         latest_data.soil_moisture_capacitance[i] = minute_data.soil_moisture_capacitance[i];
     }
@@ -557,8 +602,17 @@ static esp_err_t handle_get_sensor_data_v2(uint8_t sequence_num, uint8_t *respon
     memcpy(resp->data, &latest_data, sizeof(soil_data_t));
     *response_length = sizeof(ble_response_packet_t) + sizeof(soil_data_t);
 
+#if HARDWARE_VERSION == 40
+    ESP_LOGI(TAG, "CMD_GET_SENSOR_DATA_V2: temp=%.1f, soil_temp_count=%d, soil=%.0f, ext_temp=%.2f(%s)",
+             latest_data.temperature, latest_data.soil_temperature_count, latest_data.soil_moisture,
+             latest_data.ext_temperature, latest_data.ext_temperature_valid ? "valid" : "invalid");
+#elif HARDWARE_VERSION == 30
     ESP_LOGI(TAG, "CMD_GET_SENSOR_DATA_V2: temp=%.1f, soil_temp1=%.1f, soil_temp2=%.1f, soil=%.0f",
              latest_data.temperature, latest_data.soil_temperature1, latest_data.soil_temperature2, latest_data.soil_moisture);
+#else
+    ESP_LOGI(TAG, "CMD_GET_SENSOR_DATA_V2: temp=%.1f, soil=%.0f",
+             latest_data.temperature, latest_data.soil_moisture);
+#endif
 
     return ESP_OK;
 }
@@ -1079,6 +1133,26 @@ static esp_err_t handle_set_led_brightness(const uint8_t *data, uint16_t data_le
     return ESP_OK;
 }
 
+static esp_err_t handle_get_sensor_config(uint8_t sequence_num, uint8_t *response_buffer, size_t *response_length)
+{
+    ble_response_packet_t *resp = (ble_response_packet_t *)response_buffer;
+    resp->response_id = CMD_GET_SENSOR_CONFIG;
+    resp->status_code = RESP_STATUS_SUCCESS;
+    resp->sequence_num = sequence_num;
+    resp->data_length = sizeof(soil_sensor_config_t);
+
+    memcpy(resp->data, &g_sensor_config, sizeof(soil_sensor_config_t));
+    *response_length = sizeof(ble_response_packet_t) + sizeof(soil_sensor_config_t);
+
+    ESP_LOGI(TAG, "CMD_GET_SENSOR_CONFIG: hw_ver=%d, moisture_type=%d, soil_temp_count=%d, ext_temp=%d",
+             g_sensor_config.hardware_version,
+             g_sensor_config.moisture_sensor.sensor_type,
+             g_sensor_config.soil_temp_sensor_count,
+             g_sensor_config.ext_temp_sensor.available);
+
+    return ESP_OK;
+}
+
 static esp_err_t send_response_notification(const uint8_t *response_data, size_t response_length)
 {
     if (g_conn_handle == BLE_HS_CONN_HANDLE_NONE || !g_is_subscribed_response) {
@@ -1118,10 +1192,19 @@ static esp_err_t find_data_by_time(const struct tm *target_time, time_data_respo
         result->humidity = found_data.humidity;
         result->lux = found_data.lux;
         result->soil_moisture = found_data.soil_moisture;
-#if HARDWARE_VERSION == 30
+#if HARDWARE_VERSION == 40
+        for (int i = 0; i < TMP102_MAX_DEVICES; i++) {
+            result->soil_temperature[i] = found_data.soil_temperature[i];
+        }
+        result->soil_temperature_count = found_data.soil_temperature_count;
+        for (int i = 0; i < FDC1004_CHANNEL_COUNT; i++) {
+            result->soil_moisture_capacitance[i] = found_data.soil_moisture_capacitance[i];
+        }
+        result->ext_temperature = found_data.ext_temperature;
+        result->ext_temperature_valid = found_data.ext_temperature_valid ? 1 : 0;
+#elif HARDWARE_VERSION == 30
         result->soil_temperature1 = found_data.soil_temperature1;
         result->soil_temperature2 = found_data.soil_temperature2;
-        // FDC1004静電容量データをコピー
         for (int i = 0; i < FDC1004_CHANNEL_COUNT; i++) {
             result->soil_moisture_capacitance[i] = found_data.soil_moisture_capacitance[i];
         }

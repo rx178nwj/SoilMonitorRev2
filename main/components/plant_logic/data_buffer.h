@@ -24,10 +24,19 @@ typedef struct minute_data_t {
     float humidity;          // 湿度 (%)
     float lux;              // 照度 (lux)
     float soil_moisture;     // 土壌水分 (mV)
+#if HARDWARE_VERSION == 40
+    float soil_temperature[TMP102_MAX_DEVICES]; // 土壌温度 x4 (TMP102) [°C]
+    uint8_t soil_temperature_count;             // 有効な土壌温度センサー数
+#else
     float soil_temperature1;  // 土壌温度 (℃)
     float soil_temperature2;  // 土壌温度 (℃)
-#if HARDWARE_VERSION == 30
+#endif
+#if (HARDWARE_VERSION == 30 || HARDWARE_VERSION == 40)
     float soil_moisture_capacitance[FDC1004_CHANNEL_COUNT]; // 土壌湿度計測用静電容量 (pF)
+#endif
+#if HARDWARE_VERSION == 40
+    float ext_temperature;          // 拡張温度センサー (DS18B20) [°C]
+    bool ext_temperature_valid;     // 拡張温度データの有効性
 #endif
     bool valid;             // データの有効性
 } minute_data_t;

@@ -7,10 +7,11 @@ Plant Monitorは、ESP32-C3を使用した植物環境モニタリングシス�
 ### 主な機能
 
 - **センサーモニタリング**
-  - 土壌水分センサー (ADC / 静電容量 FDC1004)
+  - 土壌水分センサー (ADC / 静電容量 FDC1004 4ch)
   - 温湿度センサー (SHT40)
   - 照度センサー (TSL2591)
-  - 土壌温度センサー (DS18B20)
+  - 土壌温度センサー (TC74 / DS18B20 / TMP102 最大4台)
+  - 拡張温度センサー (DS18B20、Rev4)
 - **データ保存**
   - 1分ごとのセンサーデータを24時間分保存
   - NVSへの植物プロファイル保存
@@ -18,34 +19,51 @@ Plant Monitorは、ESP32-C3を使用した植物環境モニタリングシス�
   - コマンド/レスポンス方式でのデータ取得
   - センサーデータのリアルタイム通知
   - 過去データの時間指定取得
+  - センサー構成情報の取得
 - **視覚フィードバック**
   - WS2812フルカラーLEDで植物状態を表示
+  - 湿度に応じたLED色表示（暖色=乾燥、寒色=湿潤）
+  - BLE経由でのLED制御・輝度設定
   - ステータスLED（青色/赤色）
 
-### 最近の主な変更 (v3.0.0)
+### ハードウェアリビジョン対応
 
+| リビジョン | HARDWARE_VERSION | data_version | 土壌水分 | 土壌温度 | 拡張温度 |
+|-----------|-----------------|-------------|---------|---------|---------|
+| Rev1 | 10 | 1 | ADC | - | - |
+| Rev2 | 20 | 1 | ADC | - | - |
+| Rev3 | 30 | 2 | FDC1004 (4ch) | TC74 + DS18B20 (最大2台) | - |
+| Rev4 | 40 | 3 | FDC1004 (4ch) | TMP102 (最大4台) | DS18B20 (1台) |
+
+### 最近の主な変更
+
+*   **ハードウェア Rev4 のサポート:**
+    *   新しいハードウェアリビジョン(Rev4)に対応しました。
+    *   TMP102 I2C温度センサーを最大4台まで自動検出（アドレス 0x48〜0x4B）。
+    *   DS18B20を拡張温度センサー（ext_temperature）として使用。
+    *   センサー構成情報をBLE経由で取得可能（CMD_GET_SENSOR_CONFIG）。
 *   **ハードウェア Rev3 のサポート:**
-    *   新しいハードウェアリビジョン(Rev3)に対応しました。
-    *   土壌水分センサーとして、従来の抵抗式ADCセンサーに加え、高精度な静電容量センサー(FDC1004)をサポートしました。
-    *   最大2つの土壌温度センサー(DS18B20)を接続できるようになりました。
-*   **データ構造の更新 (v2):**
-    *   ハードウェア Rev3 の新機能（静電容量、複数温度センサー）に対応するため、BLE通信および内部データ保存用のデータ構造を更新しました。
-    *   下位互換性のため、`data_version` フィールドを追加し、アプリケーション側でデータ構造を識別できるようにしました。
-*   **センサー読み取り処理の改善:**
-    *   FDC1004静電容量センサーの読み取りロジックを改善し、4チャンネルすべての値をより安定して独立に取得できるようになりました。
-    *   SHT40温湿度センサーの読み取り安定性を向上させました。
+    *   土壌水分センサーとして、高精度な静電容量センサー(FDC1004)をサポート。
+    *   最大2つの土壌温度センサー(TC74 + DS18B20)を接続可能。
+*   **データ構造の更新 (v3):**
+    *   Rev4用にdata_version=3を追加。TMP102 x4の土壌温度配列、拡張温度センサーを含む。
+    *   下位互換性のため、`data_version` フィールドでデータ構造を識別。
+*   **湿度ベースLED表示:**
+    *   FDC1004の静電容量値を0%〜100%の湿度に変換し、LED色で表示。
+    *   暖色（オレンジ）= 乾燥、寒色（青）= 湿潤。
 *   **BLE通信の機能強化:**
-    *   新しいデータ構造に対応し、静電容量や複数の土壌温度データをBLE経由で取得できるようになりました。
+    *   WS2812 LED制御コマンド（CMD_CONTROL_LED, CMD_SET_LED_BRIGHTNESS）追加。
+    *   センサー構成情報取得コマンド（CMD_GET_SENSOR_CONFIG）追加。
 
 ## ハードウェア情報
 
 | パラメータ | 値 |
 |-----------|-----|
-| ハードウェアバージョン | Rev3.0 (HARDWARE_VERSION=30) |
+| ハードウェアバージョン | Rev4.0 (HARDWARE_VERSION=40) |
 | ソフトウェアバージョン | 3.0.0 |
 | 対応チップ | ESP32-C3 |
 
-### GPIO配置 (Rev3)
+### GPIO配置 (Rev3/Rev4)
 
 | 機能 | GPIO |
 |------|------|
@@ -56,6 +74,20 @@ Plant Monitorは、ESP32-C3を使用した植物環境モニタリングシス�
 | WS2812 LED | GPIO1 |
 | 青色LED | GPIO0 |
 | 赤色LED | GPIO2 |
+| 1-Wire (DS18B20) | GPIO4 |
+
+### I2Cデバイス
+
+| デバイス | アドレス | 用途 |
+|---------|---------|------|
+| SHT40 | 0x44 | 温湿度センサー |
+| TSL2591 | 0x29 | 照度センサー |
+| FDC1004 | 0x50 | 静電容量センサー (4ch) |
+| TC74 | 0x48 | 土壌温度 (Rev3) |
+| TMP102 #0 | 0x48 | 土壌温度 (Rev4, A0=GND) |
+| TMP102 #1 | 0x49 | 土壌温度 (Rev4, A0=V+) |
+| TMP102 #2 | 0x4A | 土壌温度 (Rev4, A0=SDA) |
+| TMP102 #3 | 0x4B | 土壌温度 (Rev4, A0=SCL) |
 
 ## ビルドとフラッシュ
 
@@ -113,10 +145,10 @@ idf.py -p COM3 flash monitor
 PlantMonitor_<HW_VERSION>_<DEVICE_ID>
 ```
 
-- `HW_VERSION`: ハードウェアバージョン（Rev2の場合は`20`）
+- `HW_VERSION`: ハードウェアバージョン（Rev4の場合は`40`）
 - `DEVICE_ID`: BLE MACアドレスの下位2バイトから生成される4桁の16進数
 
-例：`PlantMonitor_20_A1B2`
+例：`PlantMonitor_40_A1B2`
 
 ### サービスUUID
 
@@ -208,6 +240,9 @@ struct ble_response_packet {
 | 0x15 | CMD_SET_TIMEZONE | タイムゾーン設定 | 可変 |
 | 0x16 | CMD_SAVE_TIMEZONE | タイムゾーン設定のNVS保存 | 0 |
 | 0x17 | CMD_GET_SENSOR_DATA_V2 | 最新センサーデータ取得（拡張版） | 0 |
+| 0x18 | CMD_CONTROL_LED | WS2812 LED制御 | 6 |
+| 0x19 | CMD_SET_LED_BRIGHTNESS | LED輝度設定 | 1 |
+| 0x1A | CMD_GET_SENSOR_CONFIG | 土壌センサー構成情報取得 | 0 |
 
 ---
 
@@ -244,7 +279,7 @@ struct {
 ```
 **合計サイズ**: 55バイト
 
-**`data_version == 2` (現行バージョン / Rev3)**
+**`data_version == 2` (Rev3)**
 ```c
 // soil_data_v2
 struct {
@@ -261,6 +296,25 @@ struct {
 } __attribute__((packed));
 ```
 **合計サイズ**: 79バイト
+
+**`data_version == 3` (現行バージョン / Rev4)**
+```c
+// soil_data_v3
+struct {
+    uint8_t data_version;     // == 3
+    struct tm datetime;       // タイムスタンプ（36バイト）
+    float lux;                // 照度 [lux]
+    float temperature;        // 温度 [°C]
+    float humidity;           // 湿度 [%]
+    float soil_moisture;      // 土壌水分 [pF] (FDC1004平均値)
+    bool sensor_error;        // センサーエラー
+    float soil_temperature[4];         // 土壌温度 x4 (TMP102) [°C]
+    uint8_t soil_temperature_count;    // 有効な土壌温度センサー数
+    float soil_moisture_capacitance[4]; // 静電容量 [pF] (4ch分)
+    float ext_temperature;             // 拡張温度 (DS18B20) [°C]
+    bool ext_temperature_valid;        // 拡張温度データの有効性
+} __attribute__((packed));
+```
 
 **struct tm構造**
 ```c
@@ -454,7 +508,7 @@ struct {
 ```
 **合計サイズ**: 53バイト
 
-**`data_version == 2` (現行バージョン / Rev3)**
+**`data_version == 2` (Rev3)**
 ```c
 // time_data_response_v2
 struct {
@@ -470,6 +524,24 @@ struct {
 } __attribute__((packed));
 ```
 **合計サイズ**: 77バイト
+
+**`data_version == 3` (現行バージョン / Rev4)**
+```c
+// time_data_response_v3
+struct {
+    uint8_t data_version;     // == 3
+    struct tm actual_time;    // 実際に見つかったデータの時刻 (36バイト)
+    float temperature;        // 温度 [°C]
+    float humidity;           // 湿度 [%]
+    float lux;                // 照度 [lux]
+    float soil_moisture;      // 土壌水分 [pF]
+    float soil_temperature[4];         // 土壌温度 x4 (TMP102) [°C]
+    uint8_t soil_temperature_count;    // 有効な土壌温度センサー数
+    float soil_moisture_capacitance[4]; // 静電容量 [pF] (4ch分)
+    float ext_temperature;             // 拡張温度 (DS18B20) [°C]
+    uint8_t ext_temperature_valid;     // 拡張温度データの有効性
+} __attribute__((packed));
+```
 
 ---
 
@@ -819,6 +891,160 @@ data: (なし)
 2. `CMD_SET_TIMEZONE`で新しいタイムゾーンを設定
 3. `CMD_GET_TIMEZONE`で設定内容を確認
 4. 正しく設定されていれば`CMD_SAVE_TIMEZONE`でNVSに保存
+
+---
+
+### 0x18: CMD_CONTROL_LED - WS2812 LED制御
+
+WS2812フルカラーLEDの色と輝度を制御します。
+
+**コマンド**
+```
+command_id: 0x18
+sequence_num: <任意>
+data_length: 0x0006
+data: <ws2812_led_control_t構造体>
+```
+
+**ws2812_led_control_t構造**
+```c
+struct ws2812_led_control {
+    uint8_t  red;            // 赤 (0-255)
+    uint8_t  green;          // 緑 (0-255)
+    uint8_t  blue;           // 青 (0-255)
+    uint8_t  brightness;     // 輝度 (0-100%)
+    uint16_t duration_ms;    // 点灯時間 [ms] (0=無制限)
+} __attribute__((packed));
+```
+
+**サイズ**: 6バイト
+
+**レスポンス**
+
+ステータスコードのみ（data_length = 0）
+
+---
+
+### 0x19: CMD_SET_LED_BRIGHTNESS - LED輝度設定
+
+WS2812 LEDの輝度のみを変更します（色は維持）。
+
+**コマンド**
+```
+command_id: 0x19
+sequence_num: <任意>
+data_length: 0x0001
+data: <brightness: uint8_t (0-100%)>
+```
+
+**レスポンス**
+
+ステータスコードのみ（data_length = 0）
+
+---
+
+### 0x1A: CMD_GET_SENSOR_CONFIG - 土壌センサー構成情報取得
+
+ユニットに接続されている土壌センサーの構成情報を取得します。
+センサーの種類、台数、基本スペック、設置深さなどが含まれます。
+
+**コマンド**
+```
+command_id: 0x1A
+sequence_num: <任意>
+data_length: 0x0000
+data: (なし)
+```
+
+**レスポンス**
+
+`soil_sensor_config_t`構造体が返されます：
+
+```c
+// 土壌湿度センサー情報 (22バイト)
+struct soil_moisture_sensor_info {
+    uint8_t  sensor_type;           // 0:ADC, 1:FDC1004
+    uint16_t probe_length_mm;       // プローブ全体の長さ [mm]
+    uint16_t sensing_length_mm;     // 湿度計測部の長さ [mm]
+    uint8_t  channel_count;         // チャンネル数 (ADC:1, FDC1004:4)
+    float    capacitance_min_pf;    // 最小静電容量 [pF]
+    float    capacitance_max_pf;    // 最大静電容量 [pF]
+    float    measurement_range_min; // 計測範囲下限
+    float    measurement_range_max; // 計測範囲上限
+} __attribute__((packed));
+
+// 土壌温度センサー1台分 (15バイト)
+struct soil_temp_sensor_info {
+    uint8_t  device_type;     // 0:None, 1:DS18B20, 2:TMP102, 3:TC74
+    int16_t  depth_mm;        // 地表からの深さ [mm]
+    float    temp_min;        // 計測範囲下限 [°C]
+    float    temp_max;        // 計測範囲上限 [°C]
+    float    temp_resolution; // 温度分解能 [°C]
+} __attribute__((packed));
+
+// 拡張温度センサー情報 (14バイト)
+struct ext_temp_sensor_info {
+    uint8_t  available;       // 0:無, 1:有
+    uint8_t  device_type;     // 0:None, 1:DS18B20
+    float    temp_min;        // 計測範囲下限 [°C]
+    float    temp_max;        // 計測範囲上限 [°C]
+    float    temp_resolution; // 温度分解能 [°C]
+} __attribute__((packed));
+
+// ユニット全体の構成 (99バイト)
+struct soil_sensor_config {
+    uint8_t  hardware_version;                  // HWバージョン (10/20/30/40)
+    uint8_t  data_structure_version;            // データ構造バージョン (1/2/3)
+    soil_moisture_sensor_info moisture_sensor;   // 土壌湿度センサー
+    uint8_t  soil_temp_sensor_count;            // 接続中の土壌温度センサー数
+    soil_temp_sensor_info soil_temp_sensors[4];  // 土壌温度センサー x4
+    ext_temp_sensor_info ext_temp_sensor;        // 拡張温度センサー
+} __attribute__((packed));
+```
+
+**Pythonでのパース例:**
+```python
+import struct
+
+def parse_sensor_config(data):
+    offset = 0
+    hw_ver, ds_ver = struct.unpack_from('<BB', data, offset); offset += 2
+
+    # 土壌湿度センサー
+    m_type, probe_len, sense_len, ch_count = struct.unpack_from('<BHHB', data, offset); offset += 6
+    cap_min, cap_max, range_min, range_max = struct.unpack_from('<ffff', data, offset); offset += 16
+
+    # 土壌温度センサー
+    temp_count = struct.unpack_from('<B', data, offset)[0]; offset += 1
+    soil_temps = []
+    for i in range(4):
+        dev_type, depth = struct.unpack_from('<bh', data, offset); offset += 3
+        t_min, t_max, t_res = struct.unpack_from('<fff', data, offset); offset += 12
+        soil_temps.append({
+            'device_type': dev_type, 'depth_mm': depth,
+            'temp_min': t_min, 'temp_max': t_max, 'resolution': t_res
+        })
+
+    # 拡張温度センサー
+    ext_avail, ext_type = struct.unpack_from('<BB', data, offset); offset += 2
+    ext_min, ext_max, ext_res = struct.unpack_from('<fff', data, offset); offset += 12
+
+    return {
+        'hardware_version': hw_ver,
+        'data_structure_version': ds_ver,
+        'moisture_sensor': {
+            'type': m_type, 'probe_length_mm': probe_len,
+            'sensing_length_mm': sense_len, 'channel_count': ch_count,
+            'capacitance_min_pf': cap_min, 'capacitance_max_pf': cap_max,
+        },
+        'soil_temp_count': temp_count,
+        'soil_temp_sensors': soil_temps[:temp_count],
+        'ext_temp_sensor': {
+            'available': ext_avail, 'device_type': ext_type,
+            'temp_min': ext_min, 'temp_max': ext_max, 'resolution': ext_res
+        }
+    }
+```
 
 ---
 

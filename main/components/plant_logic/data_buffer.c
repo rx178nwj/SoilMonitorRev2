@@ -74,7 +74,20 @@ esp_err_t data_buffer_add_minute_data(const soil_data_t *sensor_data) {
     entry->humidity = sensor_data->humidity;
     entry->lux = sensor_data->lux;
     entry->soil_moisture = sensor_data->soil_moisture;
-#if HARDWARE_VERSION == 30
+#if HARDWARE_VERSION == 40
+    // Rev4: TMP102 x4の土壌温度データをコピー
+    entry->soil_temperature_count = sensor_data->soil_temperature_count;
+    for (int i = 0; i < TMP102_MAX_DEVICES; i++) {
+        entry->soil_temperature[i] = sensor_data->soil_temperature[i];
+    }
+    // FDC1004静電容量データをコピー
+    for (int i = 0; i < FDC1004_CHANNEL_COUNT; i++) {
+        entry->soil_moisture_capacitance[i] = sensor_data->soil_moisture_capacitance[i];
+    }
+    // 拡張温度センサー (DS18B20) データをコピー
+    entry->ext_temperature = sensor_data->ext_temperature;
+    entry->ext_temperature_valid = sensor_data->ext_temperature_valid;
+#elif HARDWARE_VERSION == 30
     entry->soil_temperature1 = sensor_data->soil_temperature1;
     entry->soil_temperature2 = sensor_data->soil_temperature2;
     // FDC1004静電容量データをコピー
@@ -85,8 +98,13 @@ esp_err_t data_buffer_add_minute_data(const soil_data_t *sensor_data) {
 
     entry->valid = true;
 
+#if HARDWARE_VERSION == 40
+    ESP_LOGD(TAG, "Added minute data at index %d: temp=%.1f, humidity=%.1f, soil=%.0f, soil_temp_count=%d",
+             g_minute_write_index, entry->temperature, entry->humidity, entry->soil_moisture, entry->soil_temperature_count);
+#else
     ESP_LOGD(TAG, "Added minute data at index %d: temp=%.1f, humidity=%.1f, soil=%.0f, soil_temp1=%.1f, soil_temp2=%.1f",
              g_minute_write_index, entry->temperature, entry->humidity, entry->soil_moisture, entry->soil_temperature1, entry->soil_temperature2);
+#endif
 
     // インデックスを更新（リングバッファ）
     g_minute_write_index = (g_minute_write_index + 1) % DATA_BUFFER_MINUTES_PER_DAY;
@@ -405,10 +423,19 @@ static esp_err_t calculate_daily_summary(const struct tm *date, daily_summary_da
             if (g_minute_buffer[i].soil_moisture < min_soil) min_soil = g_minute_buffer[i].soil_moisture;
             if (g_minute_buffer[i].soil_moisture > max_soil) max_soil = g_minute_buffer[i].soil_moisture;
 
-            // 土壌温度（soil_temperature1を使用）
+            // 土壌温度
+#if HARDWARE_VERSION == 40
+            // Rev4: TMP102の最初のセンサーを代表値として使用
+            if (g_minute_buffer[i].soil_temperature_count > 0) {
+                soil_temp_sum += g_minute_buffer[i].soil_temperature[0];
+                if (g_minute_buffer[i].soil_temperature[0] < min_soil_temp) min_soil_temp = g_minute_buffer[i].soil_temperature[0];
+                if (g_minute_buffer[i].soil_temperature[0] > max_soil_temp) max_soil_temp = g_minute_buffer[i].soil_temperature[0];
+            }
+#else
             soil_temp_sum += g_minute_buffer[i].soil_temperature1;
             if (g_minute_buffer[i].soil_temperature1 < min_soil_temp) min_soil_temp = g_minute_buffer[i].soil_temperature1;
             if (g_minute_buffer[i].soil_temperature1 > max_soil_temp) max_soil_temp = g_minute_buffer[i].soil_temperature1;
+#endif
         }
     }
 
