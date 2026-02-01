@@ -45,4 +45,12 @@ esp_err_t ws2812_show_status(bool moisture_warning, bool temp_high, bool temp_lo
  */
 esp_err_t ws2812_set_color_by_humidity(uint8_t humidity_percent);
 
+/**
+ * @brief 長期乾燥ワーニング表示（橙⇔赤の交互点滅）
+ * @param blink_count 点滅回数（橙→赤で1回）
+ * @param interval_ms 1色あたりの表示時間(ms)
+ * @return ESP_OK: 成功, その他: エラー
+ */
+esp_err_t ws2812_show_dry_warning(uint8_t blink_count, uint16_t interval_ms);
+
 #endif // WS2812_CONTROL_H

@@ -21,7 +21,7 @@ typedef struct {
     int soil_dry_days_for_watering;         // この日数以上乾燥が続いたら水やりを指示 (例: 3日)
     float temp_high_limit;                  // 高温限界 (これを超えると警告)
     float temp_low_limit;                   // 低温限界 (これを下回ると警告)
-    float watering_threshold_mv;            // 灌水検出閾値 (2回前から何mV減少で灌水と判定) (例: 200.0mV)
+    float watering_threshold;               // 灌水検出閾値 (2回前から何pF減少で灌水と判定) (例: 200.0mV)
 } plant_profile_t;
 
 /**

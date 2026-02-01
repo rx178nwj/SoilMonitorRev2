@@ -1,6 +1,8 @@
 #include "ws2812_control.h"
 #include "esp_log.h"
 #include "driver/gpio.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include <string.h>
 
 static const char *TAG = "WS2812_CTRL";
@@ -307,6 +309,36 @@ esp_err_t ws2812_show_status(bool moisture_warning, bool temp_high, bool temp_lo
         ret = ws2812_set_preset_color(WS2812_COLOR_PURPLE);
         ESP_LOGI(TAG, "❓ 状態不明 - 紫LED点灯");
     }
+
+    return ret;
+}
+
+/**
+ * @brief 長期乾燥ワーニング表示（橙⇔赤の交互点滅）
+ * @param blink_count 点滅回数（橙→赤で1回）
+ * @param interval_ms 1色あたりの表示時間(ms)
+ * @return ESP_OK: 成功, その他: エラー
+ */
+esp_err_t ws2812_show_dry_warning(uint8_t blink_count, uint16_t interval_ms)
+{
+    esp_err_t ret = ESP_OK;
+
+    ESP_LOGI(TAG, "⚠️  長期乾燥ワーニング: 橙⇔赤 交互点滅 (%d回, %dms間隔)", blink_count, interval_ms);
+
+    for (uint8_t i = 0; i < blink_count; i++) {
+        // 橙色表示
+        ret = ws2812_set_color(255, 100, 0);
+        if (ret != ESP_OK) return ret;
+        vTaskDelay(pdMS_TO_TICKS(interval_ms));
+
+        // 赤色表示
+        ret = ws2812_set_color(255, 0, 0);
+        if (ret != ESP_OK) return ret;
+        vTaskDelay(pdMS_TO_TICKS(interval_ms));
+    }
+
+    // 最後は橙色で終了（乾燥状態を示す）
+    ret = ws2812_set_color(255, 100, 0);
 
     return ret;
 }

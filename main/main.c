@@ -152,7 +152,7 @@ static void read_all_sensors(soil_data_t *data) {
 #if MOISTURE_SENSOR_TYPE == MOISTURE_SENSOR_TYPE_FDC1004
     // Rev3: FDC1004静電容量センサーを使用
     fdc1004_data_t fdc_data;
-    float sum = 0.0f;
+    float sum = 0.0f, max_value=0.0f;
     if (fdc1004_measure_all_channels(&fdc_data, FDC1004_RATE_100HZ) == ESP_OK) {
         
 
@@ -162,11 +162,13 @@ static void read_all_sensors(soil_data_t *data) {
         data->soil_moisture_capacitance[2] = fdc_data.capacitance_ch3;
         data->soil_moisture_capacitance[3] = fdc_data.capacitance_ch4;
 
-        // 全チャンネルの平均を土壌水分値として使用
-        for (int i = 0; i < FDC1004_CHANNEL_COUNT; i++) {
-            sum += data->soil_moisture_capacitance[i];
+        // 全チャンネルの最大値を土壌湿度として使用
+        // 最大値にすることにより、乾燥している状態をより正確に反映
+        max_value = data->soil_moisture_capacitance[0];
+        for (int i = 1; i < FDC1004_CHANNEL_COUNT; i++) {
+            max_value = fmaxf(max_value, data->soil_moisture_capacitance[i]);
         }
-        data->soil_moisture = sum / FDC1004_CHANNEL_COUNT;
+        data->soil_moisture = max_value;
 
         ESP_LOGI(TAG, "  - FDC1004 CH1: %.3f pF (raw: %d)",
                  fdc_data.capacitance_ch1, fdc_data.raw_ch1);
@@ -443,6 +445,10 @@ static void status_analysis_task(void *pvParameters) {
         } else if (status.plant_condition == ERROR_CONDITION) {
             ws2812_set_preset_color(WS2812_COLOR_PURPLE);
             ESP_LOGE(TAG, "❌ エラー状態です！");
+        } else if (status.plant_condition == NEEDS_WATERING) {
+            // 長期乾燥ワーニング: 橙⇔赤の交互点滅（3回、500ms間隔）
+            ws2812_show_dry_warning(3, 500);
+            ESP_LOGW(TAG, "🏜️  長期乾燥です！灌水が必要です！");
         } else {
             // 静電容量の平均値から湿度パーセントを計算
             uint8_t humidity_percent = capacitance_to_humidity_percent(latest_sensor.soil_moisture);

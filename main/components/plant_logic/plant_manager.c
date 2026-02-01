@@ -178,8 +178,8 @@ static plant_condition_t determine_plant_condition(const plant_profile_t *profil
 
     // 灌水完了判定（2つの条件のいずれかで判定）
     // 条件1: 2回前のサンプリングから設定値以上下がった場合
-    if (detect_watering_event(soil_moisture, profile->watering_threshold_mv)) {
-        ESP_LOGI(TAG, "💧 灌水イベント検出: 土壌水分が2回前から%.0fmV以上減少", profile->watering_threshold_mv);
+    if (detect_watering_event(soil_moisture, profile->watering_threshold)) {
+        ESP_LOGI(TAG, "💧 灌水イベント検出: 土壌水分が2回前から%.2f以上減少", profile->watering_threshold);
         return WATERING_COMPLETED;
     }
 

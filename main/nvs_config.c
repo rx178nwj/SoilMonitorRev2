@@ -25,16 +25,16 @@ void nvs_config_set_default_plant_profile(plant_profile_t *profile) {
     strcpy(profile->plant_name, "Succulent Plant");
 
     // 土壌水分の条件
-    profile->soil_dry_threshold = 2500.0f;
-    profile->soil_wet_threshold = 1000.0f;
-    profile->soil_dry_days_for_watering = 3;
+    profile->soil_dry_threshold = MOISTURE_DRY_THRESHOLD;
+    profile->soil_wet_threshold = MOISTURE_WET_THRESHOLD;
+    profile->soil_dry_days_for_watering = DRY_WARNING_DAYS;
 
     // 気温の限界値
-    profile->temp_high_limit = 35.0f;
-    profile->temp_low_limit = 5.0f;
+    profile->temp_high_limit = TEMP_HIGH_THRESHOLD;
+    profile->temp_low_limit = TEMP_LOW_THRESHOLD;
 
     // 灌水検出閾値
-    profile->watering_threshold_mv = 200.0f;
+    profile->watering_threshold = WATERING_DETECTION_THRESHOLD;
 
     ESP_LOGI(TAG, "Default plant profile set for: %s", profile->plant_name);
 }
@@ -141,8 +141,8 @@ esp_err_t nvs_config_load_plant_profile(plant_profile_t *profile) {
     ESP_LOGI(TAG, "Temp Limits: High >= %.1f C, Low <= %.1f C",
                 profile->temp_high_limit,
                 profile->temp_low_limit);
-    ESP_LOGI(TAG, "Watering Detection: %.0fmV decrease threshold",
-                profile->watering_threshold_mv);
+    ESP_LOGI(TAG, "Watering Detection: %.2f decrease threshold",
+                profile->watering_threshold);
 
     nvs_close(nvs_handle);
     return ESP_OK;

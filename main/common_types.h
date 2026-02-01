@@ -23,7 +23,7 @@
 // ソフトウェアバージョン
 #define SOFTWARE_VERSION "3.0.0"
 // ハードウェアバージョン (10: Rev1, 20: Rev2, 30: Rev3, 40: Rev4)
-#define HARDWARE_VERSION 40
+#define HARDWARE_VERSION 30
 
 
 
@@ -54,11 +54,15 @@
 #define SENSOR_READ_INTERVAL_MS  60000  // 1分ごとにセンサー読み取り
 
 // センサー閾値
-#define MOISTURE_DRY_THRESHOLD    2000  // 乾燥閾値
+#define MOISTURE_DRY_THRESHOLD    1.0  // 乾燥閾値
+#define MOISTURE_WET_THRESHOLD    2.0  // 湿潤閾値
+#define DRY_WARNING_DAYS          3    // 長期乾燥警告日数
+#define WATERING_DETECTION_THRESHOLD MOISTURE_DRY_THRESHOLD // 灌水検出閾値 (mVまたはpF)
 #define TEMP_HIGH_THRESHOLD       30.0  // 高温閾値
 #define TEMP_LOW_THRESHOLD        15.0  // 低温閾値
 #define HUMIDITY_LOW_THRESHOLD    40.0  // 低湿度閾値
 #define LIGHT_LOW_THRESHOLD       100   // 暗さ閾値
+
 
 // センサータイプ定義
 #define TEMPARETURE_SENSOR_TYPE_SHT30  1
