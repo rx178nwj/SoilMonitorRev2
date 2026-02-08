@@ -261,8 +261,8 @@ static void read_all_sensors(soil_data_t *data) {
         data->lux = 0; // エラー時は0を設定
     }
 
-#if HARDWARE_VERSION == 40
-    // Rev4: TMP102 x4 の土壌温度を一括読み取り
+#if (HARDWARE_VERSION == 30 || HARDWARE_VERSION == 40)
+    // Rev3/Rev4: TMP102 x4 の土壌温度を一括読み取り
     {
         uint8_t count = 0;
         tmp102_read_all_temperatures(data->soil_temperature, &count);
@@ -276,6 +276,7 @@ static void read_all_sensors(soil_data_t *data) {
         }
     }
 
+#if HARDWARE_VERSION == 40
     // Rev4: DS18B20 拡張温度センサー読み取り
     if (g_soil_temp_sensors.ds18b20_connected) {
         float ext_temp;
@@ -292,46 +293,7 @@ static void read_all_sensors(soil_data_t *data) {
         data->ext_temperature = 0.0f;
         data->ext_temperature_valid = false;
     }
-#elif HARDWARE_VERSION == 30
-    // Rev3: TC74/DS18B20 の土壌温度読み取り
-    // 土壌温度センサー1: TC74優先、次にDS18B20
-    if (g_soil_temp_sensors.tc74_connected) {
-        float tc74_temp;
-        if (tc74_read_temperature(&tc74_temp) == ESP_OK) {
-            data->soil_temperature1 = tc74_temp;
-            ESP_LOGI(TAG, "  - TC74 Soil Temperature 1: %.0f°C", tc74_temp);
-        } else {
-            data->soil_temperature1 = 0.0f;
-            ESP_LOGW(TAG, "  - TC74: Failed to read temperature 1");
-        }
-    } else if (g_soil_temp_sensors.ds18b20_connected) {
-        float ds18b20_temp;
-        if (ds18b20_read_single_temperature(&ds18b20_temp) == ESP_OK) {
-            data->soil_temperature1 = ds18b20_temp;
-            ESP_LOGI(TAG, "  - DS18B20 Soil Temperature 1: %.2f°C", ds18b20_temp);
-        } else {
-            data->soil_temperature1 = 0.0f;
-            ESP_LOGW(TAG, "  - DS18B20: Failed to read temperature 1");
-        }
-    } else {
-        data->soil_temperature1 = 0.0f;
-        ESP_LOGD(TAG, "  - Soil Temperature 1: No sensor connected");
-    }
-
-    // 土壌温度センサー2: TC74とDS18B20の両方が接続されている場合のみ
-    if (g_soil_temp_sensors.tc74_connected && g_soil_temp_sensors.ds18b20_connected) {
-        float ds18b20_temp2;
-        if (ds18b20_read_single_temperature(&ds18b20_temp2) == ESP_OK) {
-            data->soil_temperature2 = ds18b20_temp2;
-            ESP_LOGI(TAG, "  - DS18B20 Soil Temperature 2: %.2f°C", ds18b20_temp2);
-        } else {
-            data->soil_temperature2 = 0.0f;
-            ESP_LOGW(TAG, "  - DS18B20: Failed to read temperature 2");
-        }
-    } else {
-        data->soil_temperature2 = 0.0f;
-        ESP_LOGD(TAG, "  - Soil Temperature 2: No sensor assigned");
-    }
+#endif
 #endif
 }
 
@@ -545,7 +507,8 @@ static esp_err_t system_init(void) {
         ESP_LOGW(TAG, "FDC1004初期化失敗、スキップします");
     }
 
-    // TC74土壌温度センサー初期化 (Rev3)
+#if (HARDWARE_VERSION != 30 && HARDWARE_VERSION != 40)
+    // TC74土壌温度センサー初期化 (Rev1/Rev2のみ、Rev3/Rev4はTMP102と同一I2Cアドレスのため除外)
     ESP_LOGI(TAG, "TC74土壌温度センサー初期化を試行中...");
     esp_err_t tc74_ret = tc74_init_with_address(TC74_ADDR_A0);  // TC74A0を使用
     if (tc74_ret == ESP_OK) {
@@ -555,36 +518,34 @@ static esp_err_t system_init(void) {
         g_soil_temp_sensors.tc74_connected = false;
         ESP_LOGW(TAG, "⚠️  TC74センサーが検出されませんでした");
     }
+#endif
 
-    // TMP102土壌温度センサー初期化 (Rev4: 最大4台自動検出)
+    // TMP102土壌温度センサー初期化 (最大4台自動検出)
     ESP_LOGI(TAG, "TMP102土壌温度センサー自動検出を開始...");
     esp_err_t tmp102_ret = tmp102_init_all();
     if (tmp102_ret == ESP_OK) {
         g_soil_temp_sensors.tmp102_count = tmp102_get_device_count();
         ESP_LOGI(TAG, "✅ TMP102センサー %d台検出", g_soil_temp_sensors.tmp102_count);
+        for (uint8_t i = 0; i < g_soil_temp_sensors.tmp102_count; i++) {
+            ESP_LOGI(TAG, "  [%d] I2Cアドレス: 0x%02X", i, tmp102_get_device_address(i));
+        }
     } else {
         g_soil_temp_sensors.tmp102_count = 0;
         ESP_LOGW(TAG, "⚠️  TMP102センサーが検出されませんでした");
     }
 
-    // DS18B20温度センサー初期化 (Rev3: 土壌温度, Rev4: 拡張温度)
+#if HARDWARE_VERSION == 40
+    // DS18B20温度センサー初期化 (Rev4: 拡張温度センサー用)
     ESP_LOGI(TAG, "DS18B20温度センサー初期化を試行中...");
     esp_err_t ds_ret = ds18b20_init();
     if (ds_ret == ESP_OK) {
         g_soil_temp_sensors.ds18b20_connected = true;
-#if HARDWARE_VERSION == 40
         ESP_LOGI(TAG, "✅ DS18B20センサーが接続されました (ext_temperatureに割り当て)");
-#else
-        if (g_soil_temp_sensors.tc74_connected) {
-            ESP_LOGI(TAG, "✅ DS18B20センサーが接続されました (soil_temperature2に割り当て)");
-        } else {
-            ESP_LOGI(TAG, "✅ DS18B20センサーが接続されました (soil_temperature1に割り当て)");
-        }
-#endif
     } else {
         g_soil_temp_sensors.ds18b20_connected = false;
         ESP_LOGW(TAG, "⚠️  DS18B20センサーが検出されませんでした");
     }
+#endif
 
     // センサー接続状態のサマリー表示
     ESP_LOGI(TAG, "=== 土壌温度センサー接続状態 ===");
@@ -611,20 +572,45 @@ static esp_err_t system_init(void) {
     g_sensor_config.moisture_sensor.measurement_range_max = 3300.0f;  // ADC mV
 #endif
 
+#if (HARDWARE_VERSION == 30 || HARDWARE_VERSION == 40)
+    // プローブ寸法をTMP102検出数に基づいて設定
+    switch (g_soil_temp_sensors.tmp102_count) {
+        case 2:
+            g_sensor_config.moisture_sensor.probe_length_mm = 50;
+            g_sensor_config.moisture_sensor.sensing_length_mm = 50;
+            break;
+        case 3:
+            g_sensor_config.moisture_sensor.probe_length_mm = 75;
+            g_sensor_config.moisture_sensor.sensing_length_mm = 75;
+            break;
+        case 4:
+            g_sensor_config.moisture_sensor.probe_length_mm = 100;
+            g_sensor_config.moisture_sensor.sensing_length_mm = 100;
+            break;
+        default:
+            g_sensor_config.moisture_sensor.probe_length_mm = 0;
+            g_sensor_config.moisture_sensor.sensing_length_mm = 0;
+            break;
+    }
+#endif
+
     // 土壌温度センサー情報
     uint8_t soil_temp_idx = 0;
-#if HARDWARE_VERSION == 40
-    // Rev4: TMP102 x N
-    for (uint8_t i = 0; i < g_soil_temp_sensors.tmp102_count && soil_temp_idx < MAX_SOIL_TEMP_SENSORS; i++) {
-        g_sensor_config.soil_temp_sensors[soil_temp_idx].device_type = SOIL_TEMPERATURE_SENSOR_TMP102;
-        g_sensor_config.soil_temp_sensors[soil_temp_idx].depth_mm = 0;  // 未設定（アプリ側で設定可能）
-        g_sensor_config.soil_temp_sensors[soil_temp_idx].temp_min = TMP102_TEMP_MIN;
-        g_sensor_config.soil_temp_sensors[soil_temp_idx].temp_max = TMP102_TEMP_MAX;
-        g_sensor_config.soil_temp_sensors[soil_temp_idx].temp_resolution = TMP102_TEMP_RESOLUTION;
-        soil_temp_idx++;
+#if (HARDWARE_VERSION == 30 || HARDWARE_VERSION == 40)
+    // Rev3/Rev4: TMP102 x N (深さ: 13mm, 40mm, 65mm, 90mm)
+    {
+        static const int16_t sensor_depths[] = {13, 40, 65, 90};
+        for (uint8_t i = 0; i < g_soil_temp_sensors.tmp102_count && soil_temp_idx < MAX_SOIL_TEMP_SENSORS; i++) {
+            g_sensor_config.soil_temp_sensors[soil_temp_idx].device_type = SOIL_TEMPERATURE_SENSOR_TMP102;
+            g_sensor_config.soil_temp_sensors[soil_temp_idx].depth_mm = sensor_depths[i];
+            g_sensor_config.soil_temp_sensors[soil_temp_idx].temp_min = TMP102_TEMP_MIN;
+            g_sensor_config.soil_temp_sensors[soil_temp_idx].temp_max = TMP102_TEMP_MAX;
+            g_sensor_config.soil_temp_sensors[soil_temp_idx].temp_resolution = TMP102_TEMP_RESOLUTION;
+            soil_temp_idx++;
+        }
     }
 #else
-    // Rev3以前: TC74
+    // Rev1/Rev2: TC74
     if (g_soil_temp_sensors.tc74_connected && soil_temp_idx < MAX_SOIL_TEMP_SENSORS) {
         g_sensor_config.soil_temp_sensors[soil_temp_idx].device_type = SOIL_TEMPERATURE_SENSOR_TC74;
         g_sensor_config.soil_temp_sensors[soil_temp_idx].depth_mm = 0;
@@ -633,7 +619,7 @@ static esp_err_t system_init(void) {
         g_sensor_config.soil_temp_sensors[soil_temp_idx].temp_resolution = 1.0f;
         soil_temp_idx++;
     }
-    // Rev3以前: DS18B20 (土壌温度用)
+    // Rev1/Rev2: DS18B20 (土壌温度用)
     if (g_soil_temp_sensors.ds18b20_connected && soil_temp_idx < MAX_SOIL_TEMP_SENSORS) {
         g_sensor_config.soil_temp_sensors[soil_temp_idx].device_type = SOIL_TEMPERATURE_SENSOR_DS18B20;
         g_sensor_config.soil_temp_sensors[soil_temp_idx].depth_mm = 0;

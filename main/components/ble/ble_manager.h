@@ -47,21 +47,9 @@ typedef struct __attribute__((packed)) {
     float lux;                // 照度
     float soil_moisture;      // 土壌水分
 } time_data_response_t;
-#elif HARDWARE_VERSION == 30 // Rev3
+#elif (HARDWARE_VERSION == 30 || HARDWARE_VERSION == 40) // Rev3/Rev4
 typedef struct __attribute__((packed)) {
-    uint8_t data_version;     // データ構造バージョン (DATA_STRUCTURE_VERSION_2)
-    struct tm actual_time;    // 実際に見つかったデータの時間
-    float temperature;        // 気温
-    float humidity;           // 湿度
-    float lux;                // 照度
-    float soil_moisture;      // 土壌水分
-    float soil_temperature1;  // 土壌温度1
-    float soil_temperature2;  // 土壌温度2
-    float soil_moisture_capacitance[FDC1004_CHANNEL_COUNT]; // 土壌湿度計測用静電容量 (pF)
-} time_data_response_t;
-#elif HARDWARE_VERSION == 40 // Rev4
-typedef struct __attribute__((packed)) {
-    uint8_t data_version;     // データ構造バージョン (DATA_STRUCTURE_VERSION_3)
+    uint8_t data_version;     // データ構造バージョン
     struct tm actual_time;    // 実際に見つかったデータの時間
     float temperature;        // 気温
     float humidity;           // 湿度
@@ -70,8 +58,10 @@ typedef struct __attribute__((packed)) {
     float soil_temperature[TMP102_MAX_DEVICES]; // 土壌温度 x4 (TMP102) [°C]
     uint8_t soil_temperature_count;             // 有効な土壌温度センサー数
     float soil_moisture_capacitance[FDC1004_CHANNEL_COUNT]; // 土壌湿度計測用静電容量 (pF)
+#if HARDWARE_VERSION == 40
     float ext_temperature;          // 拡張温度センサー (DS18B20) [°C]
     uint8_t ext_temperature_valid;  // 拡張温度データの有効性
+#endif
 } time_data_response_t;
 #endif
 

@@ -50,6 +50,13 @@ esp_err_t tmp102_init_all(void);
 uint8_t tmp102_get_device_count(void);
 
 /**
+ * @brief インデックス指定でI2Cアドレスを取得
+ * @param index デバイスインデックス (0〜検出数-1)
+ * @return I2Cアドレス (0x48〜0x4B)、見つからない場合は0
+ */
+uint8_t tmp102_get_device_address(uint8_t index);
+
+/**
  * @brief インデックス指定で温度読み取り
  * @param index デバイスインデックス (0〜検出数-1)
  * @param temperature 温度格納先 [°C]

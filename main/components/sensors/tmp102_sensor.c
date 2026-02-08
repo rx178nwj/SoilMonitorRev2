@@ -124,6 +124,23 @@ uint8_t tmp102_get_device_count(void)
 }
 
 /**
+ * @brief インデックス指定でI2Cアドレスを取得
+ */
+uint8_t tmp102_get_device_address(uint8_t index)
+{
+    uint8_t found = 0;
+    for (int i = 0; i < TMP102_MAX_DEVICES; i++) {
+        if (tmp102_devices[i].connected) {
+            if (found == index) {
+                return tmp102_devices[i].addr;
+            }
+            found++;
+        }
+    }
+    return 0;
+}
+
+/**
  * @brief インデックス指定で温度読み取り
  * @param index 検出順インデックス (0〜検出数-1)
  */
